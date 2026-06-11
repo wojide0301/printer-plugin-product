@@ -1,0 +1,155 @@
+export type ConnectState = 'connectSuccess' | 'disconnect' | 'connectFail'
+export type EscJustification = 'left' | 'center' | 'right'
+
+export type PrinterDevice = {
+  deviceId: string
+  name: string
+  rssi: number
+  serviceUUIDs: string[]
+}
+
+export type PrinterConnection = {
+  deviceId: string
+  name: string
+  serviceUUID: string
+  writeCharacteristicUUID: string
+}
+
+export type PrinterError = {
+  errCode: number
+  errMsg: string
+}
+
+export type WriteDataResult = {
+  byteLength: number
+  chunkCount: number
+}
+
+export type ConnectStatePayload = {
+  state: ConnectState
+  deviceId?: string
+  errMsg?: string
+}
+
+export type BlueStateCallback = (on: boolean) => void
+export type ConnectStateCallback = (payload: ConnectStatePayload) => void
+export type DataReceiveCallback = (data: number[]) => void
+export type WriteDataCallback = (info: WriteDataResult) => void
+
+export type TwoColumnText = {
+  left: string
+  right: string
+}
+
+export type ThreeColumnText = {
+  left: string
+  middle: string
+  right: string
+}
+
+export type FourColumnText = {
+  one: string
+  two: string
+  three: string
+  four: string
+}
+
+export type EscQRCodeParam = {
+  content: string
+  size: number
+}
+
+export type EscImageParam = {
+  base64Str: string
+}
+
+export type ScanPrintersSuccess = {
+  devices: PrinterDevice[]
+}
+
+export type ScanPrintersOptions = {
+  timeout?: number
+  serviceUUIDs?: string[]
+  success?: (res: ScanPrintersSuccess) => void
+  fail?: (err: PrinterError) => void
+  complete?: () => void
+}
+
+export type StopScanPrintersOptions = {
+  success?: () => void
+  fail?: (err: PrinterError) => void
+  complete?: () => void
+}
+
+export type ConnectPrinterOptions = {
+  deviceId: string
+  serviceUUIDs?: string[]
+  writeCharacteristicUUIDs?: string[]
+  timeout?: number
+  success?: (res: PrinterConnection) => void
+  fail?: (err: PrinterError) => void
+  complete?: () => void
+}
+
+export type DisconnectPrinterOptions = {
+  success?: () => void
+  fail?: (err: PrinterError) => void
+  complete?: () => void
+}
+
+export type GetConnectedPrinterOptions = {
+  success?: (res: PrinterConnection | null) => void
+  fail?: (err: PrinterError) => void
+  complete?: () => void
+}
+
+export type PrintEscOptions = {
+  bytes: number[]
+  chunkSize?: number
+  success?: () => void
+  fail?: (err: PrinterError) => void
+  complete?: () => void
+}
+
+export type PrintTextOptions = {
+  title: string
+  lines: string[]
+  feed?: number
+  cut?: boolean
+  chunkSize?: number
+  success?: () => void
+  fail?: (err: PrinterError) => void
+  complete?: () => void
+}
+
+export type ScanBlue = (callback: (device: PrinterDevice) => void) => void
+export type StopScanBlue = () => void
+export type ConnectBlue = (deviceId: string) => void
+export type Disconnect = () => void
+export type WriteData = (callback: WriteDataCallback | null) => void
+export type OnBlueStateChange = (callback: BlueStateCallback) => void
+export type OnConnectStateChange = (callback: ConnectStateCallback) => void
+export type OnDataReceive = (callback: DataReceiveCallback) => void
+export type ClearCommandBuffer = () => void
+export type EscInitializePrinter = () => void
+export type EscJustificationCommand = (position: EscJustification) => void
+export type EscSetCharcterSize = (size: 1 | 2) => void
+export type EscTurnEmphasizedMode = (on: boolean) => void
+export type EscCutPaper = () => void
+export type EscNewLine = () => void
+export type AddPrintAndFeedLines = (lines: number) => void
+export type EscText = (text: string) => void
+export type EscTwoText58 = (payload: TwoColumnText) => string
+export type EscThreeText58 = (payload: ThreeColumnText) => string
+export type EscFourText58 = (payload: FourColumnText) => string
+export type EscQRCode = (payload: EscQRCodeParam) => void
+export type EscImage = (payload: EscImageParam) => void
+export type EscStringCommand = (command: string) => void
+export type EscBytesCommand = (command: number[]) => void
+export type ScanPrinters = (options: ScanPrintersOptions) => void
+export type StopScanPrinters = (options: StopScanPrintersOptions) => void
+export type ConnectPrinter = (options: ConnectPrinterOptions) => void
+export type DisconnectPrinter = (options: DisconnectPrinterOptions) => void
+export type GetConnectedPrinter = (options: GetConnectedPrinterOptions) => void
+export type PrintEsc = (options: PrintEscOptions) => void
+export type PrintText = (options: PrintTextOptions) => void

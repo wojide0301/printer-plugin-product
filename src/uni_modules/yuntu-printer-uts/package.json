@@ -1,0 +1,81 @@
+{
+  "id": "yuntu-printer-uts",
+  "displayName": "Yuntu Printer UTS",
+  "version": "0.1.0",
+  "description": "Android and iOS BLE printer plugin for uni-app using ESC/POS commands.",
+  "keywords": [
+    "uts",
+    "bluetooth",
+    "printer",
+    "esc-pos",
+    "ble"
+  ],
+  "repository": "",
+  "engines": {
+    "HBuilderX": "^4.0.0"
+  },
+  "dcloudext": {
+    "type": "uts",
+    "sale": {
+      "regular": {
+        "price": "0.00"
+      },
+      "sourcecode": {
+        "price": "0.00"
+      }
+    },
+    "contact": {
+      "qq": ""
+    },
+    "declaration": {
+      "ads": "无",
+      "data": "插件会使用蓝牙扫描、蓝牙连接和蓝牙写入能力，不采集用户账号信息。",
+      "permissions": "Android: BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_SCAN, BLUETOOTH_CONNECT, ACCESS_FINE_LOCATION; iOS: Bluetooth Always Usage Description."
+    },
+    "npmurl": ""
+  },
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": {
+      "cloud": {
+        "tcb": "n",
+        "aliyun": "n"
+      },
+      "client": {
+        "App": {
+          "app-vue": "y",
+          "app-nvue": "n"
+        },
+        "H5-mobile": {
+          "Safari": "n",
+          "Android Browser": "n",
+          "微信浏览器(Android)": "n",
+          "QQ浏览器(Android)": "n"
+        },
+        "H5-pc": {
+          "Chrome": "n",
+          "IE": "n",
+          "Edge": "n",
+          "Firefox": "n",
+          "Safari": "n"
+        },
+        "小程序": {
+          "微信": "n",
+          "阿里": "n",
+          "百度": "n",
+          "字节跳动": "n",
+          "QQ": "n"
+        },
+        "快应用": {
+          "华为": "n",
+          "联盟": "n"
+        },
+        "Vue": {
+          "vue2": "n",
+          "vue3": "y"
+        }
+      }
+    }
+  }
+}

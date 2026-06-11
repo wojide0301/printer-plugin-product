@@ -1,0 +1,401 @@
+import { CBCentralManager, CBCentralManagerDelegate, CBCharacteristic, CBCharacteristicWriteType, CBManagerState, CBPeripheral, CBPeripheralDelegate, CBService, CBUUID } from 'CoreBluetooth'
+import { Data, NSError, NSNumber } from 'Foundation'
+import { splitBytes } from '../common/chunk.uts'
+import { buildReceipt, escFourText58 as buildFourText58, escThreeText58 as buildThreeText58, escTwoText58 as buildTwoText58, PrinterEscBuilder } from '../common/esc.uts'
+import type { ReceiptPayload } from '../common/esc.uts'
+import type { AddPrintAndFeedLines, BlueStateCallback, ClearCommandBuffer, ConnectBlue, ConnectPrinter, ConnectPrinterOptions, ConnectStateCallback, DataReceiveCallback, Disconnect, DisconnectPrinter, DisconnectPrinterOptions, EscBytesCommand, EscCutPaper, EscImage, EscInitializePrinter, EscJustificationCommand, EscNewLine, EscQRCode, EscSetCharcterSize, EscStringCommand, EscText, EscThreeText58, EscTurnEmphasizedMode, EscTwoText58, EscFourText58, GetConnectedPrinter, GetConnectedPrinterOptions, OnBlueStateChange, OnConnectStateChange, OnDataReceive, PrintEsc, PrintEscOptions, PrintText, PrintTextOptions, PrinterConnection, PrinterDevice, ScanBlue, ScanPrinters, ScanPrintersOptions, StopScanBlue, StopScanPrinters, StopScanPrintersOptions, WriteData, WriteDataCallback } from '../interface.uts'
+import { createPrinterError, PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, PRINTER_ERROR_CONNECT_FAILED, PRINTER_ERROR_DEVICE_NOT_FOUND, PRINTER_ERROR_INVALID_PAYLOAD, PRINTER_ERROR_NOT_CONNECTED, PRINTER_ERROR_WRITE_FAILED } from '../unierror.uts'
+
+const DEFAULT_WRITE_CHARACTERISTIC_UUIDS = [
+  '0000FF02-0000-1000-8000-00805F9B34FB',
+  '0000FF01-0000-1000-8000-00805F9B34FB',
+  '49535343-8841-43F4-A8D4-ECBE34729BB3',
+]
+
+let centralManager: CBCentralManager | null = null
+let centralDelegate: CBCentralManagerDelegate | null = null
+let peripheralDelegate: CBPeripheralDelegate | null = null
+let discoveredPeripherals: Map<string, CBPeripheral> = new Map()
+let scannedDevices: PrinterDevice[] = []
+let connectedPeripheral: CBPeripheral | null = null
+let writeCharacteristic: CBCharacteristic | null = null
+let connectedPrinter: PrinterConnection | null = null
+let pendingScanOptions: ScanPrintersOptions | null = null
+let pendingConnectOptions: ConnectPrinterOptions | null = null
+let preferredWriteCharacteristicUUIDs: string[] = DEFAULT_WRITE_CHARACTERISTIC_UUIDS
+let blueStateCallback: BlueStateCallback | null = null
+let connectStateCallback: ConnectStateCallback | null = null
+let dataReceiveCallback: DataReceiveCallback | null = null
+const commandBuilder = new PrinterEscBuilder()
+
+type CompleteCallback = () => void
+
+function runComplete(callback: CompleteCallback | null) {
+  if (callback != null) {
+    callback()
+  }
+}
+
+function normalizeUUID(value: string): string {
+  return value.uppercaseString
+}
+
+function emitBlueState(on: boolean) {
+  blueStateCallback?.(on)
+}
+
+function emitConnectState(state: 'connectSuccess' | 'disconnect' | 'connectFail', deviceId: string, errMsg: string) {
+  connectStateCallback?.({ state, deviceId, errMsg })
+}
+
+function emitDataReceive(data: number[]) {
+  dataReceiveCallback?.(data)
+}
+
+function upsertDevice(device: PrinterDevice) {
+  const index = scannedDevices.findIndex((item: PrinterDevice) => item.deviceId == device.deviceId)
+  if (index >= 0) {
+    scannedDevices[index] = device
+  }
+  else {
+    scannedDevices.push(device)
+  }
+}
+
+function buildServiceUUIDs(serviceUUIDs: string[]): CBUUID[] {
+  const uuids: CBUUID[] = []
+  for (let index = 0; index < serviceUUIDs.length; index += 1) {
+    uuids.push(CBUUID.UUIDWithString(serviceUUIDs[index]))
+  }
+  return uuids
+}
+
+class PrinterCentralDelegate implements CBCentralManagerDelegate {
+  centralManagerDidUpdateState(manager: CBCentralManager) {
+    emitBlueState(manager.state == CBManagerState.poweredOn)
+
+    if (manager.state != CBManagerState.poweredOn) {
+      pendingScanOptions?.fail?.(createPrinterError(PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, 'Bluetooth is unavailable or disabled.'))
+      pendingScanOptions?.complete?.()
+      pendingScanOptions = null
+      pendingConnectOptions?.fail?.(createPrinterError(PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, 'Bluetooth is unavailable or disabled.'))
+      pendingConnectOptions?.complete?.()
+      pendingConnectOptions = null
+      return
+    }
+
+    if (pendingScanOptions != null) {
+      startScanWithReadyManager(manager, pendingScanOptions!)
+    }
+    if (pendingConnectOptions != null) {
+      startConnectWithReadyManager(manager, pendingConnectOptions!)
+    }
+  }
+
+  centralManagerDidDiscoverPeripheral(_manager: CBCentralManager, peripheral: CBPeripheral, _advertisementData: Map<Any, Any>, RSSI: NSNumber) {
+    const deviceId = peripheral.identifier.UUIDString
+    discoveredPeripherals.set(deviceId, peripheral)
+    const device: PrinterDevice = {
+      deviceId,
+      name: peripheral.name ?? 'Unknown Printer',
+      rssi: RSSI.intValue,
+      serviceUUIDs: [],
+    }
+    upsertDevice(device)
+    emitBlueState(true)
+    pendingScanOptions?.success?.({ devices: scannedDevices })
+  }
+
+  centralManagerDidConnectPeripheral(_manager: CBCentralManager, peripheral: CBPeripheral) {
+    connectedPeripheral = peripheral
+    peripheral.delegate = peripheralDelegate
+    const serviceUUIDs = buildServiceUUIDs(pendingConnectOptions?.serviceUUIDs ?? [])
+    peripheral.discoverServices(serviceUUIDs.length > 0 ? serviceUUIDs : null)
+  }
+
+  centralManagerDidFailToConnectPeripheral(_manager: CBCentralManager, _peripheral: CBPeripheral, _error: NSError | null) {
+    pendingConnectOptions?.fail?.(createPrinterError(PRINTER_ERROR_CONNECT_FAILED, 'Failed to connect peripheral.'))
+    const deviceId = pendingConnectOptions == null ? '' : pendingConnectOptions!.deviceId
+    emitConnectState('connectFail', deviceId, 'Failed to connect peripheral.')
+    pendingConnectOptions?.complete?.()
+    pendingConnectOptions = null
+  }
+
+  centralManagerDidDisconnectPeripheral(_manager: CBCentralManager, _peripheral: CBPeripheral, _error: NSError | null) {
+    connectedPeripheral = null
+    writeCharacteristic = null
+    connectedPrinter = null
+    emitConnectState('disconnect', '', '')
+  }
+}
+
+class PrinterPeripheralDelegate implements CBPeripheralDelegate {
+  peripheralDidDiscoverServices(peripheral: CBPeripheral, error: NSError | null) {
+    if (error != null || peripheral.services == null) {
+      pendingConnectOptions?.fail?.(createPrinterError(PRINTER_ERROR_CONNECT_FAILED, 'Service discovery failed.'))
+      pendingConnectOptions?.complete?.()
+      pendingConnectOptions = null
+      return
+    }
+
+    const services = peripheral.services!
+    for (let index = 0; index < services.length; index += 1) {
+      peripheral.discoverCharacteristics(null, forService = services[index])
+    }
+  }
+
+  peripheralDidDiscoverCharacteristicsForService(peripheral: CBPeripheral, service: CBService, error: NSError | null) {
+    if (error != null || service.characteristics == null || pendingConnectOptions == null) {
+      return
+    }
+
+    const characteristics = service.characteristics!
+    for (let index = 0; index < characteristics.length; index += 1) {
+      const characteristic = characteristics[index]
+      const uuid = normalizeUUID(characteristic.UUID.UUIDString)
+      if (preferredWriteCharacteristicUUIDs.includes(uuid) && writeCharacteristic == null) {
+        writeCharacteristic = characteristic
+        connectedPrinter = {
+          deviceId: pendingConnectOptions!.deviceId,
+          name: peripheral.name ?? 'Unknown Printer',
+          serviceUUID: service.UUID.UUIDString,
+          writeCharacteristicUUID: characteristic.UUID.UUIDString,
+        }
+        pendingConnectOptions!.success?.(connectedPrinter!)
+        emitConnectState('connectSuccess', pendingConnectOptions!.deviceId, '')
+        pendingConnectOptions!.complete?.()
+        pendingConnectOptions = null
+        return
+      }
+    }
+
+    if (writeCharacteristic == null) {
+      pendingConnectOptions?.fail?.(createPrinterError(PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, 'No writable printer characteristic was found.'))
+      const deviceId = pendingConnectOptions == null ? '' : pendingConnectOptions!.deviceId
+      emitConnectState('connectFail', deviceId, 'No writable printer characteristic was found.')
+      pendingConnectOptions?.complete?.()
+      pendingConnectOptions = null
+    }
+  }
+
+  peripheralDidUpdateValueForCharacteristic(_peripheral: CBPeripheral, characteristic: CBCharacteristic, _error: NSError | null) {
+    const data = characteristic.value
+    if (data == null) {
+      return
+    }
+    const bytes: number[] = []
+    const count = data.length
+    const pointer = data.bytes
+    for (let index = 0; index < count; index += 1) {
+      bytes.push(pointer[index].toInt() & 0xFF)
+    }
+    emitDataReceive(bytes)
+  }
+}
+
+function ensureCentralManager() {
+  if (centralManager != null) {
+    return
+  }
+
+  centralDelegate = new PrinterCentralDelegate()
+  peripheralDelegate = new PrinterPeripheralDelegate()
+
+  centralManager = new CBCentralManager(delegate = centralDelegate, queue = null)
+}
+
+function startScanWithReadyManager(manager: CBCentralManager, options: ScanPrintersOptions) {
+  const serviceUUIDs = buildServiceUUIDs(options.serviceUUIDs ?? [])
+  manager.scanForPeripheralsWithServices(serviceUUIDs.length > 0 ? serviceUUIDs : null, options = null)
+  const timeout = options.timeout ?? 10000
+  if (timeout > 0) {
+    setTimeout(() => {
+      stopScanPrinters({
+        success() {
+          options.success?.({ devices: scannedDevices })
+        },
+        fail: options.fail,
+        complete: options.complete,
+      })
+    }, timeout)
+  }
+}
+
+function startConnectWithReadyManager(manager: CBCentralManager, options: ConnectPrinterOptions) {
+    const peripheral = discoveredPeripherals.get(options.deviceId)
+  if (peripheral == null) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_DEVICE_NOT_FOUND, `Device ${options.deviceId} was not found. Scan before connecting.`))
+    runComplete(options.complete ?? null)
+    pendingConnectOptions = null
+    return
+  }
+  preferredWriteCharacteristicUUIDs = []
+  const sourceUUIDs = options.writeCharacteristicUUIDs ?? DEFAULT_WRITE_CHARACTERISTIC_UUIDS
+  for (let index = 0; index < sourceUUIDs.length; index += 1) {
+    preferredWriteCharacteristicUUIDs.push(normalizeUUID(sourceUUIDs[index]))
+  }
+  manager.connectPeripheral(peripheral, options = null)
+}
+
+export const scanPrinters: ScanPrinters = function (options: ScanPrintersOptions) {
+  scannedDevices = []
+  discoveredPeripherals.clear()
+  pendingScanOptions = options
+  ensureCentralManager()
+  if (centralManager?.state == CBManagerState.poweredOn) {
+    startScanWithReadyManager(centralManager!, options)
+  }
+}
+
+export const stopScanPrinters: StopScanPrinters = function (options: StopScanPrintersOptions) {
+  centralManager?.stopScan()
+  pendingScanOptions = null
+  options.success?.()
+  runComplete(options.complete ?? null)
+}
+
+export const connectPrinter: ConnectPrinter = function (options: ConnectPrinterOptions) {
+  pendingConnectOptions = options
+  ensureCentralManager()
+  if (centralManager?.state == CBManagerState.poweredOn) {
+    startConnectWithReadyManager(centralManager!, options)
+  }
+}
+
+export const disconnectPrinter: DisconnectPrinter = function (options: DisconnectPrinterOptions) {
+  if (connectedPeripheral != null) {
+    centralManager?.cancelPeripheralConnection(connectedPeripheral!)
+  }
+  connectedPeripheral = null
+  writeCharacteristic = null
+  connectedPrinter = null
+  emitConnectState('disconnect', '', '')
+  options.success?.()
+  runComplete(options.complete ?? null)
+}
+
+export const getConnectedPrinter: GetConnectedPrinter = function (options: GetConnectedPrinterOptions) {
+  options.success?.(connectedPrinter)
+  options.complete?.()
+}
+
+function writeBytes(bytes: number[], chunkSize: number, success: () => void, fail: (message: string) => void) {
+  if (connectedPeripheral == null || writeCharacteristic == null) {
+    fail('Printer is not connected.')
+    return
+  }
+
+  const chunks = splitBytes(bytes, chunkSize)
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index]
+    const byteValues: UInt8[] = []
+    for (let byteIndex = 0; byteIndex < chunk.length; byteIndex += 1) {
+      byteValues.push(UInt8(chunk[byteIndex]))
+    }
+    const data = Data(bytes = byteValues, count = chunk.length)
+    connectedPeripheral!.writeValue(data, forCharacteristic = writeCharacteristic!, type = CBCharacteristicWriteType.withoutResponse)
+  }
+  success()
+}
+
+export const scanBlue: ScanBlue = function (callback: (device: PrinterDevice) => void) {
+  scanPrinters({
+    timeout: 10000,
+    success(res) {
+      const latest = res.devices[res.devices.length - 1]
+      if (latest != null) {
+        callback(latest)
+      }
+    },
+  })
+}
+
+export const stopScanBlue: StopScanBlue = function () {
+  stopScanPrinters({})
+}
+
+export const connectBlue: ConnectBlue = function (deviceId: string) {
+  connectPrinter({
+    deviceId,
+    fail(err) {
+      emitConnectState('connectFail', deviceId, err.errMsg)
+    },
+  })
+}
+
+export const disconnect: Disconnect = function () {
+  disconnectPrinter({})
+}
+
+export const writeData: WriteData = function (callback: WriteDataCallback | null) {
+  const bytes = commandBuilder.toBytes()
+  const chunks = splitBytes(bytes, 20)
+  writeBytes(bytes, 20, () => {
+    callback?.({ byteLength: bytes.length, chunkCount: chunks.length })
+  }, (message: string) => {
+    const deviceId = connectedPrinter == null ? '' : connectedPrinter!.deviceId
+    emitConnectState('connectFail', deviceId, message)
+  })
+}
+
+export const onBlueStateChange: OnBlueStateChange = function (callback: BlueStateCallback) {
+  blueStateCallback = callback
+}
+
+export const onConnectStateChange: OnConnectStateChange = function (callback: ConnectStateCallback) {
+  connectStateCallback = callback
+}
+
+export const onDataReceive: OnDataReceive = function (callback: DataReceiveCallback) {
+  dataReceiveCallback = callback
+}
+
+export const clearCommandBuffer: ClearCommandBuffer = function () { commandBuilder.clearCommandBuffer() }
+export const escInitializePrinter: EscInitializePrinter = function () { commandBuilder.escInitializePrinter() }
+export const escJustification: EscJustificationCommand = function (position) { commandBuilder.escJustification(position) }
+export const escSetCharcterSize: EscSetCharcterSize = function (size) { commandBuilder.escSetCharcterSize(size) }
+export const escTurnEmphasizedMode: EscTurnEmphasizedMode = function (on) { commandBuilder.escTurnEmphasizedMode(on) }
+export const escCutPaper: EscCutPaper = function () { commandBuilder.escCutPaper() }
+export const escNewLine: EscNewLine = function () { commandBuilder.escNewLine() }
+export const addPrintAndFeedLines: AddPrintAndFeedLines = function (lines) { commandBuilder.addPrintAndFeedLines(lines) }
+export const escText: EscText = function (text) { commandBuilder.escText(text) }
+export const escTwoText58: EscTwoText58 = function (payload) { return buildTwoText58(payload) }
+export const escThreeText58: EscThreeText58 = function (payload) { return buildThreeText58(payload) }
+export const escFourText58: EscFourText58 = function (payload) { return buildFourText58(payload) }
+export const escQRCode: EscQRCode = function (payload) { commandBuilder.escQRCode(payload) }
+export const escImage: EscImage = function (payload) { commandBuilder.escImage(payload) }
+export const escStringCommand: EscStringCommand = function (command) { commandBuilder.escStringCommand(command) }
+export const escBytesCommand: EscBytesCommand = function (command) { commandBuilder.escBytesCommand(command) }
+
+export const printEsc: PrintEsc = function (options: PrintEscOptions) {
+  if (options.bytes.length == 0) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'ESC payload is empty.'))
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  writeBytes(options.bytes, options.chunkSize ?? 20, () => {
+    options.success?.()
+    runComplete(options.complete ?? null)
+  }, (message: string) => {
+    const code = message == 'Printer is not connected.' ? PRINTER_ERROR_NOT_CONNECTED : PRINTER_ERROR_WRITE_FAILED
+    options.fail?.(createPrinterError(code, message))
+    runComplete(options.complete ?? null)
+  })
+}
+
+export const printText: PrintText = function (options: PrintTextOptions) {
+  const payload: ReceiptPayload = {
+    title: options.title,
+    lines: options.lines,
+    feed: options.feed,
+    cut: options.cut,
+  }
+  printEsc({
+    bytes: buildReceipt(payload),
+    chunkSize: options.chunkSize,
+    success: options.success,
+    fail: options.fail,
+    complete: options.complete,
+  })
+}

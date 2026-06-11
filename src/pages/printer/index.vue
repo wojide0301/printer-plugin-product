@@ -1,0 +1,82 @@
+<script setup lang="ts">
+import { onMounted } from 'vue'
+import { usePrinter } from '@/composables/usePrinter'
+
+definePage({
+  name: 'printer',
+  layout: 'tabbar',
+  style: {
+    navigationBarTitleText: '打印机插件',
+  },
+})
+
+const {
+  bindEvents,
+  connectedDeviceId,
+  connect,
+  devices,
+  disconnect,
+  lastEvent,
+  loading,
+  printSample,
+  printSampleByEscCommands,
+  refreshConnected,
+  scan,
+  statusText,
+  stopScan,
+} = usePrinter()
+
+onMounted(() => {
+  bindEvents()
+  refreshConnected()
+})
+</script>
+
+<template>
+  <view class="min-h-screen bg-[var(--wot-color-bg,#f7f8fa)]">
+    <scroll-view scroll-y class="h-screen overflow-hidden">
+      <demo-block title="连接状态" transparent>
+        <wd-cell-group border custom-class="rounded-2! overflow-hidden">
+          <wd-cell title="状态" :value="statusText" />
+          <wd-cell title="最后事件" :value="lastEvent" />
+          <wd-cell v-if="connectedDeviceId" title="当前设备" :value="connectedDeviceId" />
+        </wd-cell-group>
+      </demo-block>
+
+      <demo-block title="基础功能" transparent>
+        <view class="grid grid-cols-2 gap-3 px-4">
+          <wd-button block type="primary" :loading="loading" @click="scan">
+            扫描打印机
+          </wd-button>
+          <wd-button plain block :disabled="!loading" @click="stopScan">
+            停止扫描
+          </wd-button>
+          <wd-button block type="success" :disabled="!connectedDeviceId" :loading="loading" @click="printSample">
+            语义打印
+          </wd-button>
+          <wd-button plain block type="success" :disabled="!connectedDeviceId" :loading="loading" @click="printSampleByEscCommands">
+            ESC打印
+          </wd-button>
+          <wd-button type="error" plain block :disabled="!connectedDeviceId" :loading="loading" @click="disconnect">
+            断开连接
+          </wd-button>
+        </view>
+      </demo-block>
+
+      <demo-block title="发现的设备" transparent>
+        <wd-cell-group border custom-class="rounded-2! overflow-hidden">
+          <wd-cell
+            v-for="device in devices"
+            :key="device.deviceId"
+            :title="device.name || 'Unknown Printer'"
+            :label="device.deviceId"
+            :value="`RSSI ${device.rssi}`"
+            is-link
+            @click="connect(device.deviceId)"
+          />
+          <wd-cell v-if="devices.length === 0" title="暂无设备" value="点击扫描" />
+        </wd-cell-group>
+      </demo-block>
+    </scroll-view>
+  </view>
+</template>

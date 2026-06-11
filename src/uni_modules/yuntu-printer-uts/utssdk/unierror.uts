@@ -1,0 +1,20 @@
+import type { PrinterError } from './interface.uts'
+
+export const PRINTER_ERROR_BLUETOOTH_UNAVAILABLE = 1001
+export const PRINTER_ERROR_PERMISSION_DENIED = 1002
+export const PRINTER_ERROR_SCAN_FAILED = 1003
+export const PRINTER_ERROR_DEVICE_NOT_FOUND = 1004
+export const PRINTER_ERROR_CONNECT_FAILED = 1005
+export const PRINTER_ERROR_SERVICE_NOT_FOUND = 1006
+export const PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND = 1007
+export const PRINTER_ERROR_NOT_CONNECTED = 1008
+export const PRINTER_ERROR_WRITE_FAILED = 1009
+export const PRINTER_ERROR_INVALID_PAYLOAD = 1010
+export const PRINTER_ERROR_UNSUPPORTED_PLATFORM = 1011
+
+export function createPrinterError(errCode: number, detail: string): PrinterError {
+  return {
+    errCode,
+    errMsg: `yuntu-printer-uts: ${detail}`,
+  }
+}

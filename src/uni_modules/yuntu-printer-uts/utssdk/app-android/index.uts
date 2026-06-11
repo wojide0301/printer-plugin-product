@@ -1,0 +1,412 @@
+import { BluetoothAdapter, BluetoothDevice, BluetoothGatt, BluetoothGattCallback, BluetoothGattCharacteristic, BluetoothGattService, BluetoothManager, BluetoothProfile } from 'android.bluetooth'
+import { BluetoothLeScanner, ScanCallback, ScanResult } from 'android.bluetooth.le'
+import { Context } from 'android.content'
+import { PackageManager } from 'android.content.pm'
+import { Build, Handler, Looper } from 'android.os'
+import { UUID } from 'java.util'
+import { splitBytes } from '../common/chunk.uts'
+import { buildReceipt, escFourText58 as buildFourText58, escThreeText58 as buildThreeText58, escTwoText58 as buildTwoText58, PrinterEscBuilder } from '../common/esc.uts'
+import type { ReceiptPayload } from '../common/esc.uts'
+import type { AddPrintAndFeedLines, BlueStateCallback, ClearCommandBuffer, ConnectBlue, ConnectPrinter, ConnectPrinterOptions, ConnectStateCallback, DataReceiveCallback, Disconnect, DisconnectPrinter, DisconnectPrinterOptions, EscBytesCommand, EscCutPaper, EscImage, EscInitializePrinter, EscJustificationCommand, EscNewLine, EscQRCode, EscSetCharcterSize, EscStringCommand, EscText, EscThreeText58, EscTurnEmphasizedMode, EscTwoText58, EscFourText58, GetConnectedPrinter, GetConnectedPrinterOptions, OnBlueStateChange, OnConnectStateChange, OnDataReceive, PrintEsc, PrintEscOptions, PrintText, PrintTextOptions, PrinterConnection, PrinterDevice, ScanBlue, ScanPrinters, ScanPrintersOptions, StopScanBlue, StopScanPrinters, StopScanPrintersOptions, WriteData, WriteDataCallback } from '../interface.uts'
+import { createPrinterError, PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, PRINTER_ERROR_CONNECT_FAILED, PRINTER_ERROR_DEVICE_NOT_FOUND, PRINTER_ERROR_INVALID_PAYLOAD, PRINTER_ERROR_NOT_CONNECTED, PRINTER_ERROR_PERMISSION_DENIED, PRINTER_ERROR_SCAN_FAILED, PRINTER_ERROR_SERVICE_NOT_FOUND, PRINTER_ERROR_WRITE_FAILED } from '../unierror.uts'
+
+const DEFAULT_WRITE_CHARACTERISTIC_UUIDS = [
+  '0000ff02-0000-1000-8000-00805f9b34fb',
+  '0000ff01-0000-1000-8000-00805f9b34fb',
+  '49535343-8841-43f4-a8d4-ecbe34729bb3',
+]
+
+let bluetoothAdapter: BluetoothAdapter | null = null
+let scanner: BluetoothLeScanner | null = null
+let scanCallback: ScanCallback | null = null
+let scannedDevices: PrinterDevice[] = []
+let connectedGatt: BluetoothGatt | null = null
+let writeCharacteristic: BluetoothGattCharacteristic | null = null
+let connectedPrinter: PrinterConnection | null = null
+let blueStateCallback: BlueStateCallback | null = null
+let connectStateCallback: ConnectStateCallback | null = null
+let dataReceiveCallback: DataReceiveCallback | null = null
+const commandBuilder = new PrinterEscBuilder()
+
+type CompleteCallback = () => void
+
+function runComplete(callback: CompleteCallback | null) {
+  if (callback != null) {
+    callback()
+  }
+}
+
+function getContext(): Context | null {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) {
+    return null
+  }
+  return context
+}
+
+function getAdapter(): BluetoothAdapter | null {
+  if (bluetoothAdapter != null) {
+    return bluetoothAdapter
+  }
+  const context = getContext()
+  if (context == null) {
+    return null
+  }
+  const manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+  bluetoothAdapter = manager.getAdapter()
+  return bluetoothAdapter
+}
+
+function hasBluetoothPermission(): boolean {
+  const context = getContext()
+  if (context == null) {
+    return false
+  }
+  if (Build.VERSION.SDK_INT >= 31) {
+    return context.checkSelfPermission('android.permission.BLUETOOTH_SCAN') == PackageManager.PERMISSION_GRANTED
+      && context.checkSelfPermission('android.permission.BLUETOOTH_CONNECT') == PackageManager.PERMISSION_GRANTED
+  }
+  return context.checkSelfPermission('android.permission.ACCESS_FINE_LOCATION') == PackageManager.PERMISSION_GRANTED
+}
+
+function upsertDevice(device: PrinterDevice) {
+  const index = scannedDevices.findIndex((item: PrinterDevice) => item.deviceId == device.deviceId)
+  if (index >= 0) {
+    scannedDevices[index] = device
+  }
+  else {
+    scannedDevices.push(device)
+  }
+}
+
+function emitBlueState(on: boolean) {
+  blueStateCallback?.(on)
+}
+
+function emitConnectState(state: 'connectSuccess' | 'disconnect' | 'connectFail', deviceId: string, errMsg: string) {
+  connectStateCallback?.({ state, deviceId, errMsg })
+}
+
+function emitDataReceive(data: number[]) {
+  dataReceiveCallback?.(data)
+}
+
+class PrinterScanCallback extends ScanCallback {
+  options: ScanPrintersOptions
+
+  constructor(options: ScanPrintersOptions) {
+    super()
+    this.options = options
+  }
+
+  override onScanResult(_callbackType: Int, result: ScanResult) {
+    const device: BluetoothDevice = result.getDevice()
+    const printerDevice: PrinterDevice = {
+      deviceId: device.getAddress(),
+      name: device.getName() ?? 'Unknown Printer',
+      rssi: result.getRssi(),
+      serviceUUIDs: [],
+    }
+    upsertDevice(printerDevice)
+    emitBlueState(true)
+    this.options.success?.({ devices: scannedDevices })
+  }
+
+  override onScanFailed(errorCode: Int) {
+    this.options.fail?.(createPrinterError(PRINTER_ERROR_SCAN_FAILED, `Scan failed with code ${errorCode}.`))
+    runComplete(this.options.complete ?? null)
+  }
+}
+
+class PrinterGattCallback extends BluetoothGattCallback {
+  options: ConnectPrinterOptions
+  preferredCharacteristicUUIDs: string[]
+
+  constructor(options: ConnectPrinterOptions, preferredCharacteristicUUIDs: string[]) {
+    super()
+    this.options = options
+    this.preferredCharacteristicUUIDs = preferredCharacteristicUUIDs
+  }
+
+  override onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+    if (status != BluetoothGatt.GATT_SUCCESS) {
+      this.options.fail?.(createPrinterError(PRINTER_ERROR_CONNECT_FAILED, `Connection failed with status ${status}.`))
+      emitConnectState('connectFail', this.options.deviceId, `Connection failed with status ${status}.`)
+      runComplete(this.options.complete ?? null)
+      return
+    }
+
+    if (newState == BluetoothProfile.STATE_CONNECTED) {
+      connectedGatt = gatt
+      gatt.discoverServices()
+    }
+    if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+      disconnectPrinter({})
+    }
+  }
+
+  override onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+    if (status != BluetoothGatt.GATT_SUCCESS) {
+      this.options.fail?.(createPrinterError(PRINTER_ERROR_SERVICE_NOT_FOUND, `Service discovery failed with status ${status}.`))
+      runComplete(this.options.complete ?? null)
+      return
+    }
+
+    const services = gatt.getServices()
+    for (let serviceIndex: Int = 0; serviceIndex < services.size; serviceIndex += 1) {
+      const service = services.get(serviceIndex) as BluetoothGattService
+      for (let uuidIndex = 0; uuidIndex < this.preferredCharacteristicUUIDs.length; uuidIndex += 1) {
+        const characteristic = service.getCharacteristic(UUID.fromString(this.preferredCharacteristicUUIDs[uuidIndex]))
+        if (characteristic != null) {
+          writeCharacteristic = characteristic
+          connectedPrinter = {
+            deviceId: this.options.deviceId,
+            name: gatt.getDevice().getName() ?? 'Unknown Printer',
+            serviceUUID: service.getUuid().toString(),
+            writeCharacteristicUUID: characteristic.getUuid().toString(),
+          }
+          emitConnectState('connectSuccess', this.options.deviceId, '')
+          this.options.success?.(connectedPrinter!)
+          runComplete(this.options.complete ?? null)
+          return
+        }
+      }
+    }
+
+    this.options.fail?.(createPrinterError(PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, 'No writable printer characteristic was found.'))
+    emitConnectState('connectFail', this.options.deviceId, 'No writable printer characteristic was found.')
+    runComplete(this.options.complete ?? null)
+  }
+
+  override onCharacteristicChanged(_gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+    const value = characteristic.getValue()
+    const bytes: number[] = []
+    for (let index: Int = 0; index < value.size; index += 1) {
+      bytes.push(value[index].toInt() & 0xFF)
+    }
+    emitDataReceive(bytes)
+  }
+}
+
+export const scanPrinters: ScanPrinters = function (options: ScanPrintersOptions) {
+  const adapter = getAdapter()
+  if (adapter == null || !adapter.isEnabled()) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, 'Bluetooth is unavailable or disabled.'))
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  const startScan = () => {
+    scannedDevices = []
+    scanner = adapter.getBluetoothLeScanner()
+    if (scanner == null) {
+      options.fail?.(createPrinterError(PRINTER_ERROR_SCAN_FAILED, 'Bluetooth LE scanner is unavailable.'))
+      runComplete(options.complete ?? null)
+      return
+    }
+
+    scanCallback = new PrinterScanCallback(options)
+
+    scanner!.startScan(scanCallback)
+    const timeout = options.timeout ?? 10000
+    if (timeout > 0) {
+      Handler(Looper.getMainLooper()).postDelayed(() => {
+        stopScanPrinters({
+          success() {
+            options.success?.({ devices: scannedDevices })
+          },
+          fail: options.fail,
+          complete: options.complete,
+        })
+      }, timeout.toLong())
+    }
+  }
+
+  if (hasBluetoothPermission()) {
+    startScan()
+    return
+  }
+
+  options.fail?.(createPrinterError(PRINTER_ERROR_PERMISSION_DENIED, 'Bluetooth permission is required. Grant it in system settings or before calling scanPrinters.'))
+  runComplete(options.complete ?? null)
+}
+
+export const stopScanPrinters: StopScanPrinters = function (options: StopScanPrintersOptions) {
+  if (scanner != null && scanCallback != null) {
+    scanner!.stopScan(scanCallback)
+  }
+  scanner = null
+  scanCallback = null
+  options.success?.()
+  runComplete(options.complete ?? null)
+}
+
+export const connectPrinter: ConnectPrinter = function (options: ConnectPrinterOptions) {
+  const adapter = getAdapter()
+  if (adapter == null || !adapter.isEnabled()) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, 'Bluetooth is unavailable or disabled.'))
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  const device = adapter.getRemoteDevice(options.deviceId)
+  if (device == null) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_DEVICE_NOT_FOUND, `Device ${options.deviceId} was not found.`))
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  const preferredCharacteristicUUIDs = options.writeCharacteristicUUIDs ?? DEFAULT_WRITE_CHARACTERISTIC_UUIDS
+  const callback = new PrinterGattCallback(options, preferredCharacteristicUUIDs)
+  const context = getContext()
+  if (context == null) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, 'Android context is unavailable.'))
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  device.connectGatt(context, false, callback)
+}
+
+export const disconnectPrinter: DisconnectPrinter = function (options: DisconnectPrinterOptions) {
+  connectedGatt?.disconnect()
+  connectedGatt?.close()
+  connectedGatt = null
+  writeCharacteristic = null
+  connectedPrinter = null
+  emitConnectState('disconnect', '', '')
+  options.success?.()
+  runComplete(options.complete ?? null)
+}
+
+export const getConnectedPrinter: GetConnectedPrinter = function (options: GetConnectedPrinterOptions) {
+  options.success?.(connectedPrinter)
+  options.complete?.()
+}
+
+function writeBytes(bytes: number[], chunkSize: number, success: () => void, fail: (message: string) => void) {
+  if (connectedGatt == null || writeCharacteristic == null) {
+    fail('Printer is not connected.')
+    return
+  }
+
+  const chunks = splitBytes(bytes, chunkSize)
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index]
+    const byteLength: Int = chunk.length.toInt()
+    const byteValues = kotlin.ByteArray(byteLength)
+    for (let byteIndex: Int = 0; byteIndex < byteLength; byteIndex += 1) {
+      byteValues[byteIndex] = chunk[byteIndex].toByte()
+    }
+    writeCharacteristic!.setValue(byteValues)
+    const ok = connectedGatt!.writeCharacteristic(writeCharacteristic)
+    if (!ok) {
+      fail(`Failed to write chunk ${index + 1}.`)
+      return
+    }
+    Thread.sleep(30)
+  }
+  success()
+}
+
+export const scanBlue: ScanBlue = function (callback: (device: PrinterDevice) => void) {
+  scanPrinters({
+    timeout: 10000,
+    success(res) {
+      const latest = res.devices[res.devices.length - 1]
+      if (latest != null) {
+        callback(latest)
+      }
+    },
+  })
+}
+
+export const stopScanBlue: StopScanBlue = function () {
+  stopScanPrinters({})
+}
+
+export const connectBlue: ConnectBlue = function (deviceId: string) {
+  connectPrinter({
+    deviceId,
+    fail(err) {
+      emitConnectState('connectFail', deviceId, err.errMsg)
+    },
+  })
+}
+
+export const disconnect: Disconnect = function () {
+  disconnectPrinter({})
+}
+
+export const writeData: WriteData = function (callback: WriteDataCallback | null) {
+  const bytes = commandBuilder.toBytes()
+  const chunks = splitBytes(bytes, 20)
+  writeBytes(bytes, 20, () => {
+    callback?.({ byteLength: bytes.length, chunkCount: chunks.length })
+  }, (message: string) => {
+    const deviceId = connectedPrinter == null ? '' : connectedPrinter!.deviceId
+    emitConnectState('connectFail', deviceId, message)
+  })
+}
+
+export const onBlueStateChange: OnBlueStateChange = function (callback: BlueStateCallback) {
+  blueStateCallback = callback
+}
+
+export const onConnectStateChange: OnConnectStateChange = function (callback: ConnectStateCallback) {
+  connectStateCallback = callback
+}
+
+export const onDataReceive: OnDataReceive = function (callback: DataReceiveCallback) {
+  dataReceiveCallback = callback
+}
+
+export const clearCommandBuffer: ClearCommandBuffer = function () { commandBuilder.clearCommandBuffer() }
+export const escInitializePrinter: EscInitializePrinter = function () { commandBuilder.escInitializePrinter() }
+export const escJustification: EscJustificationCommand = function (position) { commandBuilder.escJustification(position) }
+export const escSetCharcterSize: EscSetCharcterSize = function (size) { commandBuilder.escSetCharcterSize(size) }
+export const escTurnEmphasizedMode: EscTurnEmphasizedMode = function (on) { commandBuilder.escTurnEmphasizedMode(on) }
+export const escCutPaper: EscCutPaper = function () { commandBuilder.escCutPaper() }
+export const escNewLine: EscNewLine = function () { commandBuilder.escNewLine() }
+export const addPrintAndFeedLines: AddPrintAndFeedLines = function (lines) { commandBuilder.addPrintAndFeedLines(lines) }
+export const escText: EscText = function (text) { commandBuilder.escText(text) }
+export const escTwoText58: EscTwoText58 = function (payload) { return buildTwoText58(payload) }
+export const escThreeText58: EscThreeText58 = function (payload) { return buildThreeText58(payload) }
+export const escFourText58: EscFourText58 = function (payload) { return buildFourText58(payload) }
+export const escQRCode: EscQRCode = function (payload) { commandBuilder.escQRCode(payload) }
+export const escImage: EscImage = function (payload) { commandBuilder.escImage(payload) }
+export const escStringCommand: EscStringCommand = function (command) { commandBuilder.escStringCommand(command) }
+export const escBytesCommand: EscBytesCommand = function (command) { commandBuilder.escBytesCommand(command) }
+
+export const printEsc: PrintEsc = function (options: PrintEscOptions) {
+  if (options.bytes.length == 0) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'ESC payload is empty.'))
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  writeBytes(options.bytes, options.chunkSize ?? 20, () => {
+    options.success?.()
+    runComplete(options.complete ?? null)
+  }, (message: string) => {
+    const code = message == 'Printer is not connected.' ? PRINTER_ERROR_NOT_CONNECTED : PRINTER_ERROR_WRITE_FAILED
+    options.fail?.(createPrinterError(code, message))
+    runComplete(options.complete ?? null)
+  })
+}
+
+export const printText: PrintText = function (options: PrintTextOptions) {
+  const payload: ReceiptPayload = {
+    title: options.title,
+    lines: options.lines,
+    feed: options.feed,
+    cut: options.cut,
+  }
+  printEsc({
+    bytes: buildReceipt(payload),
+    chunkSize: options.chunkSize,
+    success: options.success,
+    fail: options.fail,
+    complete: options.complete,
+  })
+}
