@@ -3,6 +3,7 @@ import { requestAndroidPermission } from '@/uni_modules/x-perm-apply-instr-v2/js
 import {
   addPrintAndFeedLines,
   clearCommandBuffer,
+  connectNet,
   connectPrinter,
   disconnectPrinter,
   escCutPaper,
@@ -23,6 +24,8 @@ export interface PrinterDeviceView {
   rssi: number
   serviceUUIDs: string[]
 }
+
+export type PrinterConnectionType = 'bluetooth' | 'wifi'
 
 const BLUETOOTH_SCAN_PERMISSION = 'android.permission.BLUETOOTH_SCAN'
 const BLUETOOTH_CONNECT_PERMISSION = 'android.permission.BLUETOOTH_CONNECT'
@@ -46,8 +49,11 @@ const bluetoothPermissionExplainMap = {
 export function usePrinter() {
   const devices = ref<PrinterDeviceView[]>([])
   const connectedDeviceId = ref('')
+  const connectionType = ref<PrinterConnectionType>('bluetooth')
   const loading = ref(false)
   const lastEvent = ref('等待操作')
+  const wifiIp = ref('192.168.100.110')
+  const wifiPort = ref('8000')
   const statusText = computed(() => {
     if (connectedDeviceId.value) {
       return `已连接 ${connectedDeviceId.value}`
@@ -57,6 +63,7 @@ export function usePrinter() {
     }
     return '未连接打印机'
   })
+  const isConnected = computed(() => connectedDeviceId.value.length > 0)
 
   function getBluetoothPermissions() {
     const systemInfo = uni.getSystemInfoSync()
@@ -100,6 +107,7 @@ export function usePrinter() {
   }
 
   async function scan() {
+    connectionType.value = 'bluetooth'
     loading.value = true
     devices.value = []
 
@@ -130,11 +138,40 @@ export function usePrinter() {
   }
 
   function connect(deviceId: string) {
+    connectionType.value = 'bluetooth'
     loading.value = true
     connectPrinter({
       deviceId,
       success(res) {
         connectedDeviceId.value = res.deviceId
+        connectionType.value = 'bluetooth'
+        lastEvent.value = 'connectSuccess'
+        uni.showToast({
+          title: '连接成功',
+          icon: 'success',
+        })
+      },
+      fail: showError,
+      complete() {
+        loading.value = false
+      },
+    })
+  }
+
+  function connectWifi() {
+    if (!wifiIp.value || !wifiPort.value) {
+      showError({ errMsg: '请输入 Wi-Fi 打印机 IP 和端口' })
+      return
+    }
+
+    connectionType.value = 'wifi'
+    loading.value = true
+    connectNet({
+      ip: wifiIp.value,
+      port: wifiPort.value,
+      success(res) {
+        connectedDeviceId.value = res.deviceId
+        connectionType.value = 'wifi'
         lastEvent.value = 'connectSuccess'
         uni.showToast({
           title: '连接成功',
@@ -151,7 +188,15 @@ export function usePrinter() {
   function refreshConnected() {
     getConnectedPrinter({
       success(res) {
-        connectedDeviceId.value = res?.deviceId ?? ''
+        connectedDeviceId.value = res.deviceId
+        if (res.type === 'wifi') {
+          connectionType.value = 'wifi'
+          wifiIp.value = res.ip ?? wifiIp.value
+          wifiPort.value = String(res.port ?? wifiPort.value)
+        }
+        else if (res.deviceId) {
+          connectionType.value = 'bluetooth'
+        }
       },
       fail: showError,
     })
@@ -235,10 +280,13 @@ export function usePrinter() {
 
   return {
     bindEvents,
+    connectionType,
     connectedDeviceId,
     connect,
+    connectWifi,
     devices,
     disconnect,
+    isConnected,
     lastEvent,
     loading,
     printSample,
@@ -247,5 +295,7 @@ export function usePrinter() {
     scan,
     statusText,
     stopScan,
+    wifiIp,
+    wifiPort,
   }
 }

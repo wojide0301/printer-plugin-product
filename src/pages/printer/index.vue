@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
 import { usePrinter } from '@/composables/usePrinter'
 
 definePage({
@@ -12,10 +11,13 @@ definePage({
 
 const {
   bindEvents,
+  connectionType,
   connectedDeviceId,
   connect,
+  connectWifi,
   devices,
   disconnect,
+  isConnected,
   lastEvent,
   loading,
   printSample,
@@ -24,6 +26,8 @@ const {
   scan,
   statusText,
   stopScan,
+  wifiIp,
+  wifiPort,
 } = usePrinter()
 
 onMounted(() => {
@@ -44,26 +48,44 @@ onMounted(() => {
       </demo-block>
 
       <demo-block title="基础功能" transparent>
+        <view class="px-4 pb-3">
+          <wd-segmented
+            v-model:value="connectionType"
+            :options="[
+              { label: '蓝牙', value: 'bluetooth' },
+              { label: 'Wi-Fi', value: 'wifi' },
+            ]"
+          />
+        </view>
+        <view v-if="connectionType === 'wifi'" class="px-4 pb-3">
+          <wd-cell-group border custom-class="rounded-2! overflow-hidden">
+            <wd-input v-model="wifiIp" label="IP" placeholder="192.168.100.110" clearable />
+            <wd-input v-model="wifiPort" label="端口" placeholder="8000" type="number" clearable />
+          </wd-cell-group>
+        </view>
         <view class="grid grid-cols-2 gap-3 px-4">
-          <wd-button block type="primary" :loading="loading" @click="scan">
+          <wd-button v-if="connectionType === 'bluetooth'" block type="primary" :loading="loading" @click="scan">
             扫描打印机
           </wd-button>
-          <wd-button plain block :disabled="!loading" @click="stopScan">
+          <wd-button v-if="connectionType === 'bluetooth'" type="warning" plain block :disabled="!loading" @click="stopScan">
             停止扫描
           </wd-button>
-          <wd-button block type="success" :disabled="!connectedDeviceId" :loading="loading" @click="printSample">
+          <wd-button v-if="connectionType === 'wifi'" block type="primary" :loading="loading" @click="connectWifi">
+            连接 Wi-Fi
+          </wd-button>
+          <wd-button block type="success" :disabled="!isConnected" :loading="loading" @click="printSample">
             语义打印
           </wd-button>
-          <wd-button plain block type="success" :disabled="!connectedDeviceId" :loading="loading" @click="printSampleByEscCommands">
+          <wd-button plain block type="success" :disabled="!isConnected" :loading="loading" @click="printSampleByEscCommands">
             ESC打印
           </wd-button>
-          <wd-button type="error" plain block :disabled="!connectedDeviceId" :loading="loading" @click="disconnect">
+          <wd-button type="danger" plain block :disabled="!isConnected" :loading="loading" @click="disconnect">
             断开连接
           </wd-button>
         </view>
       </demo-block>
 
-      <demo-block title="发现的设备" transparent>
+      <demo-block v-if="connectionType === 'bluetooth'" title="发现的设备" transparent>
         <wd-cell-group border custom-class="rounded-2! overflow-hidden">
           <wd-cell
             v-for="device in devices"

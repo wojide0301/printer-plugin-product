@@ -1,13 +1,14 @@
 # Yuntu Printer UTS
 
-Android / iOS BLE 打印机 UTS 插件与 uni-app 验证工程。
+Android / iOS 蓝牙与 Wi-Fi 打印机 UTS 插件与 uni-app 验证工程。
 
-本项目基于 Wot Starter 扩展，用于开发、调试和验证 `yuntu-printer-uts` 原生打印插件。插件面向 App 端蓝牙低功耗打印机，提供设备扫描、连接、断开、ESC/POS 指令构建、原始字节写入和文本小票打印能力。
+本项目基于 Wot Starter 扩展，用于开发、调试和验证 `yuntu-printer-uts` 原生打印插件。插件面向 App 端热敏打印机，支持 BLE 蓝牙连接和 Wi-Fi/以太网 TCP 连接，提供设备扫描、连接、断开、ESC/POS 指令构建、原始字节写入和文本小票打印能力。
 
 ## 功能特性
 
 - 扫描附近 BLE 打印机设备
 - 通过 `deviceId` 连接打印机
+- 通过 IP + 端口连接 Wi-Fi/以太网打印机
 - 断开连接并查询当前连接设备
 - 构建 GPrinter 兼容风格的 ESC/POS 指令
 - 写入原始 ESC/POS 字节数据
@@ -19,12 +20,12 @@ Android / iOS BLE 打印机 UTS 插件与 uni-app 验证工程。
 
 | 平台 | 状态 | 说明 |
 | --- | --- | --- |
-| Android App | 支持 | 通过 Android Bluetooth API 实现 BLE 扫描、连接和写入 |
-| iOS App | 支持 | 通过 CoreBluetooth 实现 BLE 扫描、连接和写入 |
-| H5 | 不支持插件能力 | H5 可用于页面开发，不能调用原生 UTS 蓝牙能力 |
+| Android App | 支持 | 通过 Android Bluetooth API 实现 BLE 扫描、连接和写入；通过 TCP Socket 连接 Wi-Fi 打印机 |
+| iOS App | 支持 | 通过 CoreBluetooth 实现 BLE 扫描、连接和写入；通过 TCP Stream 连接 Wi-Fi 打印机 |
+| H5 | 不支持插件能力 | H5 可用于页面开发，不能调用原生 UTS 打印能力 |
 | 小程序 | 不支持插件能力 | 当前插件面向 App 原生运行时 |
 
-> 原生蓝牙能力需要编译进 App 运行时，Android 和 iOS 调试请使用自定义基座。
+> 原生蓝牙和 TCP 打印能力需要编译进 App 运行时，Android 和 iOS 调试请使用自定义基座。
 
 ## 环境要求
 
@@ -32,7 +33,7 @@ Android / iOS BLE 打印机 UTS 插件与 uni-app 验证工程。
 - pnpm `9.9.0`
 - HBuilderX / uni-app App 真机调试环境
 - Android 或 iOS 真机
-- 支持 BLE 的 ESC/POS 打印机
+- 支持 BLE 或 Wi-Fi/以太网 TCP 的 ESC/POS 打印机
 
 ## 快速开始
 
@@ -72,6 +73,8 @@ pnpm build:app
 
 ## 打印插件使用示例
 
+### BLE 打印
+
 ```ts
 import {
   connectPrinter,
@@ -107,7 +110,46 @@ disconnectPrinter({})
 stopScanPrinters()
 ```
 
+### Wi-Fi / 以太网打印
+
+```ts
+import {
+  connectNet,
+  disconnect,
+  escInitializePrinter,
+  escNewLine,
+  escText,
+  isConnect,
+  writeData,
+} from '@/uni_modules/yuntu-printer-uts'
+
+connectNet({
+  ip: '192.168.100.110',
+  port: '8000',
+  success(res) {
+    console.log('connected', res.deviceId)
+  },
+  fail(err) {
+    console.error(err)
+  },
+})
+
+console.log('connected:', isConnect())
+
+escInitializePrinter()
+escText('YUNTU PRINTER')
+escNewLine()
+escText('Wi-Fi Print OK')
+writeData((info) => {
+  console.log(`writeData complete: ${info.complete}, msg: ${info.msg}`)
+})
+
+disconnect()
+```
+
 ## 真机验证流程
+
+### BLE 验证
 
 1. 添加插件后构建 Android 或 iOS 自定义基座。
 2. 将自定义基座安装到真机。
@@ -117,6 +159,17 @@ stopScanPrinters()
 6. 在设备列表中选择 BLE 打印机并连接。
 7. 点击 `语义打印` 或 `ESC打印`。
 8. 确认打印机输出示例小票。
+
+### Wi-Fi 验证
+
+1. 确认手机和 Wi-Fi 打印机位于同一局域网。
+2. 打开应用并进入 `pages/printer/index`。
+3. 在通信方式中选择 `Wi-Fi`。
+4. 输入打印机 IP 和端口，端口可先使用文档示例 `8000`。
+5. 点击 `连接 Wi-Fi`。
+6. 点击 `语义打印` 或 `ESC打印`。
+7. 确认打印机输出示例小票。
+8. 点击 `断开连接`，再测试重连是否正常。
 
 预期输出示例：
 
@@ -159,18 +212,19 @@ Status OK
 
 ## 权限说明
 
-Android 端需要蓝牙扫描、蓝牙连接权限。旧版本 Android 的 BLE 扫描行为还可能需要定位权限。
+Android 端需要蓝牙扫描、蓝牙连接权限。旧版本 Android 的 BLE 扫描行为还可能需要定位权限。Wi-Fi 打印还需要网络访问、网络状态和 Wi-Fi 状态权限。
 
-iOS 端需要配置 `NSBluetoothAlwaysUsageDescription`，用于系统蓝牙权限弹窗说明。
+iOS 端需要配置 `NSBluetoothAlwaysUsageDescription`，用于系统蓝牙权限弹窗说明。Wi-Fi 局域网打印需要配置 `NSLocalNetworkUsageDescription`。
 
-项目内的 `usePrinter` 已封装 Android 权限申请提示，验证页面会在扫描前按系统版本申请必要权限。
+项目内的 `usePrinter` 已封装 Android 蓝牙权限申请提示，验证页面会在扫描前按系统版本申请必要权限。Wi-Fi 连接不触发蓝牙权限申请。
 
 ## 已知限制
 
-- 当前首版聚焦 BLE 打印机。
+- Wi-Fi 打印采用手动 IP + 端口连接，暂不提供局域网自动发现。
 - Android 经典蓝牙 SPP 打印机需要单独的传输实现。
 - 首版非 ASCII 文本会按 `?` 处理；中文打印需要结合目标打印机码页补充 GB18030 / GBK 编码验证。
 - `escImage` 涉及平台图片解码，需在 UTS 侧结合目标平台能力实现和验证。
+- 原生 UTS 网络能力需要 App 自定义基座或正式 App 包验证，H5 预览只能验证页面交互。
 
 ## 技术栈
 

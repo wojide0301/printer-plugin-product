@@ -6,5 +6,7 @@
   <string>用于扫描并连接附近的蓝牙打印机。</string>
   <key>NSBluetoothPeripheralUsageDescription</key>
   <string>用于连接蓝牙打印机并发送打印数据。</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>用于连接同一局域网内的 Wi-Fi 打印机并发送打印数据。</string>
 </dict>
 </plist>

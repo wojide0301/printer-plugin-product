@@ -1,11 +1,12 @@
 # Yuntu Printer UTS
 
-Android and iOS BLE printer plugin for uni-app.
+Android and iOS BLE and Wi-Fi printer plugin for uni-app.
 
 ## Features
 
 - Scan BLE printers.
 - Connect by device id.
+- Connect Wi-Fi printers by IP and port.
 - Build GPrinter-compatible ESC/POS command buffers.
 - Write raw ESC/POS bytes.
 - Print text receipt payloads through ESC/POS.
@@ -13,22 +14,24 @@ Android and iOS BLE printer plugin for uni-app.
 
 ## Platform
 
-- Android App: BLE through Android Bluetooth APIs.
-- iOS App: BLE through CoreBluetooth.
+- Android App: BLE through Android Bluetooth APIs and Wi-Fi through TCP sockets.
+- iOS App: BLE through CoreBluetooth and Wi-Fi through TCP streams.
 - H5 and mini programs are not supported by this UTS plugin.
 
 ## Permissions
 
-Android requires Bluetooth scan/connect permissions and location permission for older Android BLE scanning behavior.
+Android requires Bluetooth scan/connect permissions and location permission for older Android BLE scanning behavior. Wi-Fi printing requires network access permissions.
 
-iOS requires `NSBluetoothAlwaysUsageDescription`.
+iOS requires `NSBluetoothAlwaysUsageDescription`. Wi-Fi printing may require `NSLocalNetworkUsageDescription`.
 
 ## Basic Usage
 
 ```ts
 import {
+  connectNet,
   connectPrinter,
   disconnectPrinter,
+  isConnect,
   printText,
   scanPrinters,
   stopScanPrinters,
@@ -58,6 +61,29 @@ connectPrinter({
 
 disconnectPrinter({})
 stopScanPrinters()
+```
+
+## Wi-Fi Usage
+
+```ts
+import { connectNet, disconnect, isConnect, writeData } from '@/uni_modules/yuntu-printer-uts'
+
+connectNet({
+  ip: '192.168.100.110',
+  port: '8000',
+  success(res) {
+    console.log('connected', res.deviceId)
+  },
+})
+
+console.log(isConnect())
+
+// Build ESC/POS commands first, then send the command buffer.
+writeData((info) => {
+  console.log(`writeData complete: ${info.complete}, msg: ${info.msg}`)
+})
+
+disconnect()
 ```
 
 ## QA

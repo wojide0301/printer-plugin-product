@@ -1,5 +1,6 @@
 export type ConnectState = 'connectSuccess' | 'disconnect' | 'connectFail'
 export type EscJustification = 'left' | 'center' | 'right'
+export type PrinterConnectionType = 'bluetooth' | 'wifi'
 
 export type PrinterDevice = {
   deviceId: string
@@ -13,6 +14,9 @@ export type PrinterConnection = {
   name: string
   serviceUUID: string
   writeCharacteristicUUID: string
+  type?: PrinterConnectionType
+  ip?: string
+  port?: number
 }
 
 export type PrinterError = {
@@ -23,6 +27,8 @@ export type PrinterError = {
 export type WriteDataResult = {
   byteLength: number
   chunkCount: number
+  complete?: boolean
+  msg?: string
 }
 
 export type ConnectStatePayload = {
@@ -91,6 +97,15 @@ export type ConnectPrinterOptions = {
   complete?: () => void
 }
 
+export type ConnectNetOptions = {
+  ip: string
+  port: string | number
+  timeout?: number
+  success?: (res: PrinterConnection) => void
+  fail?: (err: PrinterError) => void
+  complete?: () => void
+}
+
 export type DisconnectPrinterOptions = {
   success?: () => void
   fail?: (err: PrinterError) => void
@@ -98,7 +113,7 @@ export type DisconnectPrinterOptions = {
 }
 
 export type GetConnectedPrinterOptions = {
-  success?: (res: PrinterConnection | null) => void
+  success?: (res: PrinterConnection) => void
   fail?: (err: PrinterError) => void
   complete?: () => void
 }
@@ -126,6 +141,7 @@ export type ScanBlue = (callback: (device: PrinterDevice) => void) => void
 export type StopScanBlue = () => void
 export type ConnectBlue = (deviceId: string) => void
 export type Disconnect = () => void
+export type IsConnect = () => boolean
 export type WriteData = (callback: WriteDataCallback | null) => void
 export type OnBlueStateChange = (callback: BlueStateCallback) => void
 export type OnConnectStateChange = (callback: ConnectStateCallback) => void
@@ -149,6 +165,7 @@ export type EscBytesCommand = (command: number[]) => void
 export type ScanPrinters = (options: ScanPrintersOptions) => void
 export type StopScanPrinters = (options: StopScanPrintersOptions) => void
 export type ConnectPrinter = (options: ConnectPrinterOptions) => void
+export type ConnectNet = (options: ConnectNetOptions) => void
 export type DisconnectPrinter = (options: DisconnectPrinterOptions) => void
 export type GetConnectedPrinter = (options: GetConnectedPrinterOptions) => void
 export type PrintEsc = (options: PrintEscOptions) => void

@@ -1,9 +1,9 @@
 import { CBCentralManager, CBCentralManagerDelegate, CBCharacteristic, CBCharacteristicWriteType, CBManagerState, CBPeripheral, CBPeripheralDelegate, CBService, CBUUID } from 'CoreBluetooth'
-import { Data, NSError, NSNumber } from 'Foundation'
+import { Data, InputStream, NSError, NSNumber, OutputStream, Stream } from 'Foundation'
 import { splitBytes } from '../common/chunk.uts'
 import { buildReceipt, escFourText58 as buildFourText58, escThreeText58 as buildThreeText58, escTwoText58 as buildTwoText58, PrinterEscBuilder } from '../common/esc.uts'
 import type { ReceiptPayload } from '../common/esc.uts'
-import type { AddPrintAndFeedLines, BlueStateCallback, ClearCommandBuffer, ConnectBlue, ConnectPrinter, ConnectPrinterOptions, ConnectStateCallback, DataReceiveCallback, Disconnect, DisconnectPrinter, DisconnectPrinterOptions, EscBytesCommand, EscCutPaper, EscImage, EscInitializePrinter, EscJustificationCommand, EscNewLine, EscQRCode, EscSetCharcterSize, EscStringCommand, EscText, EscThreeText58, EscTurnEmphasizedMode, EscTwoText58, EscFourText58, GetConnectedPrinter, GetConnectedPrinterOptions, OnBlueStateChange, OnConnectStateChange, OnDataReceive, PrintEsc, PrintEscOptions, PrintText, PrintTextOptions, PrinterConnection, PrinterDevice, ScanBlue, ScanPrinters, ScanPrintersOptions, StopScanBlue, StopScanPrinters, StopScanPrintersOptions, WriteData, WriteDataCallback } from '../interface.uts'
+import type { AddPrintAndFeedLines, BlueStateCallback, ClearCommandBuffer, ConnectBlue, ConnectNet, ConnectNetOptions, ConnectPrinter, ConnectPrinterOptions, ConnectStateCallback, DataReceiveCallback, Disconnect, DisconnectPrinter, DisconnectPrinterOptions, EscBytesCommand, EscCutPaper, EscImage, EscInitializePrinter, EscJustificationCommand, EscNewLine, EscQRCode, EscSetCharcterSize, EscStringCommand, EscText, EscThreeText58, EscTurnEmphasizedMode, EscTwoText58, EscFourText58, GetConnectedPrinter, GetConnectedPrinterOptions, IsConnect, OnBlueStateChange, OnConnectStateChange, OnDataReceive, PrintEsc, PrintEscOptions, PrintText, PrintTextOptions, PrinterConnection, PrinterDevice, ScanBlue, ScanPrinters, ScanPrintersOptions, StopScanBlue, StopScanPrinters, StopScanPrintersOptions, WriteData, WriteDataCallback } from '../interface.uts'
 import { createPrinterError, PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, PRINTER_ERROR_CONNECT_FAILED, PRINTER_ERROR_DEVICE_NOT_FOUND, PRINTER_ERROR_INVALID_PAYLOAD, PRINTER_ERROR_NOT_CONNECTED, PRINTER_ERROR_WRITE_FAILED } from '../unierror.uts'
 
 const DEFAULT_WRITE_CHARACTERISTIC_UUIDS = [
@@ -19,6 +19,9 @@ let discoveredPeripherals: Map<string, CBPeripheral> = new Map()
 let scannedDevices: PrinterDevice[] = []
 let connectedPeripheral: CBPeripheral | null = null
 let writeCharacteristic: CBCharacteristic | null = null
+let wifiInputStream: InputStream | null = null
+let wifiOutputStream: OutputStream | null = null
+let wifiReading = false
 let connectedPrinter: PrinterConnection | null = null
 let pendingScanOptions: ScanPrintersOptions | null = null
 let pendingConnectOptions: ConnectPrinterOptions | null = null
@@ -50,6 +53,67 @@ function emitConnectState(state: 'connectSuccess' | 'disconnect' | 'connectFail'
 
 function emitDataReceive(data: number[]) {
   dataReceiveCallback?.(data)
+}
+
+function createEmptyConnection(): PrinterConnection {
+  return {
+    deviceId: '',
+    name: '',
+    serviceUUID: '',
+    type: 'bluetooth',
+    writeCharacteristicUUID: '',
+  }
+}
+
+function createWifiConnection(ip: string, port: number): PrinterConnection {
+  return {
+    deviceId: `${ip}:${port}`,
+    ip,
+    name: 'Wi-Fi Printer',
+    port,
+    serviceUUID: '',
+    type: 'wifi',
+    writeCharacteristicUUID: '',
+  }
+}
+
+function closeWifiConnection() {
+  wifiReading = false
+  wifiInputStream?.close()
+  wifiOutputStream?.close()
+  wifiInputStream = null
+  wifiOutputStream = null
+}
+
+function readWifiData() {
+  const input = wifiInputStream
+  if (input == null) {
+    return
+  }
+
+  wifiReading = true
+  setTimeout(() => {
+    const buffer: UInt8[] = []
+    for (let index = 0; index < 1024; index += 1) {
+      buffer.push(UInt8(0))
+    }
+
+    while (wifiReading) {
+      if (input!.hasBytesAvailable) {
+        const count = input!.read(buffer, maxLength = 1024)
+        if (count > 0) {
+          const data: number[] = []
+          for (let index = 0; index < count; index += 1) {
+            data.push(buffer[index].toInt() & 0xFF)
+          }
+          emitDataReceive(data)
+        }
+        else if (count < 0) {
+          wifiReading = false
+        }
+      }
+    }
+  }, 0)
 }
 
 function upsertDevice(device: PrinterDevice) {
@@ -159,6 +223,7 @@ class PrinterPeripheralDelegate implements CBPeripheralDelegate {
           deviceId: pendingConnectOptions!.deviceId,
           name: peripheral.name ?? 'Unknown Printer',
           serviceUUID: service.UUID.UUIDString,
+          type: 'bluetooth',
           writeCharacteristicUUID: characteristic.UUID.UUIDString,
         }
         pendingConnectOptions!.success?.(connectedPrinter!)
@@ -255,11 +320,44 @@ export const stopScanPrinters: StopScanPrinters = function (options: StopScanPri
 }
 
 export const connectPrinter: ConnectPrinter = function (options: ConnectPrinterOptions) {
+  closeWifiConnection()
   pendingConnectOptions = options
   ensureCentralManager()
   if (centralManager?.state == CBManagerState.poweredOn) {
     startConnectWithReadyManager(centralManager!, options)
   }
+}
+
+export const connectNet: ConnectNet = function (options: ConnectNetOptions) {
+  const port = Number(options.port)
+  if (options.ip.length == 0 || port <= 0) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_CONNECT_FAILED, 'Wi-Fi printer ip and port are required.'))
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  disconnectPrinter({})
+
+  let input: InputStream | null = null
+  let output: OutputStream | null = null
+  Stream.getStreamsToHostWithName(options.ip, port = port, inputStream = &input, outputStream = &output)
+  if (input == null || output == null) {
+    const message = 'Wi-Fi printer connection failed.'
+    options.fail?.(createPrinterError(PRINTER_ERROR_CONNECT_FAILED, message))
+    emitConnectState('connectFail', `${options.ip}:${port}`, message)
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  wifiInputStream = input
+  wifiOutputStream = output
+  wifiInputStream!.open()
+  wifiOutputStream!.open()
+  connectedPrinter = createWifiConnection(options.ip, port)
+  emitConnectState('connectSuccess', connectedPrinter!.deviceId, '')
+  options.success?.(connectedPrinter!)
+  runComplete(options.complete ?? null)
+  readWifiData()
 }
 
 export const disconnectPrinter: DisconnectPrinter = function (options: DisconnectPrinterOptions) {
@@ -268,6 +366,7 @@ export const disconnectPrinter: DisconnectPrinter = function (options: Disconnec
   }
   connectedPeripheral = null
   writeCharacteristic = null
+  closeWifiConnection()
   connectedPrinter = null
   emitConnectState('disconnect', '', '')
   options.success?.()
@@ -275,11 +374,33 @@ export const disconnectPrinter: DisconnectPrinter = function (options: Disconnec
 }
 
 export const getConnectedPrinter: GetConnectedPrinter = function (options: GetConnectedPrinterOptions) {
-  options.success?.(connectedPrinter)
+  options.success?.(connectedPrinter == null ? createEmptyConnection() : connectedPrinter!)
   options.complete?.()
 }
 
-function writeBytes(bytes: number[], chunkSize: number, success: () => void, fail: (message: string) => void) {
+function writeWifiBytes(bytes: number[], chunkSize: number, success: () => void, fail: (message: string) => void) {
+  if (wifiOutputStream == null) {
+    fail('Printer is not connected.')
+    return
+  }
+
+  const chunks = splitBytes(bytes, chunkSize)
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index]
+    const byteValues: UInt8[] = []
+    for (let byteIndex = 0; byteIndex < chunk.length; byteIndex += 1) {
+      byteValues.push(UInt8(chunk[byteIndex]))
+    }
+    const count = wifiOutputStream!.write(byteValues, maxLength = chunk.length)
+    if (count < 0) {
+      fail(`Failed to write Wi-Fi chunk ${index + 1}.`)
+      return
+    }
+  }
+  success()
+}
+
+function writeBluetoothBytes(bytes: number[], chunkSize: number, success: () => void, fail: (message: string) => void) {
   if (connectedPeripheral == null || writeCharacteristic == null) {
     fail('Printer is not connected.')
     return
@@ -296,6 +417,19 @@ function writeBytes(bytes: number[], chunkSize: number, success: () => void, fai
     connectedPeripheral!.writeValue(data, forCharacteristic = writeCharacteristic!, type = CBCharacteristicWriteType.withoutResponse)
   }
   success()
+}
+
+function writeBytes(bytes: number[], chunkSize: number, success: () => void, fail: (message: string) => void) {
+  if (connectedPrinter?.type == 'wifi') {
+    writeWifiBytes(bytes, chunkSize, success, fail)
+    return
+  }
+
+  writeBluetoothBytes(bytes, chunkSize, success, fail)
+}
+
+function getDefaultChunkSize(bytes: number[]): number {
+  return connectedPrinter?.type == 'wifi' ? bytes.length : 20
 }
 
 export const scanBlue: ScanBlue = function (callback: (device: PrinterDevice) => void) {
@@ -327,14 +461,23 @@ export const disconnect: Disconnect = function () {
   disconnectPrinter({})
 }
 
+export const isConnect: IsConnect = function () {
+  if (connectedPrinter?.type == 'wifi') {
+    return wifiOutputStream != null
+  }
+  return connectedPeripheral != null && writeCharacteristic != null
+}
+
 export const writeData: WriteData = function (callback: WriteDataCallback | null) {
   const bytes = commandBuilder.toBytes()
-  const chunks = splitBytes(bytes, 20)
-  writeBytes(bytes, 20, () => {
-    callback?.({ byteLength: bytes.length, chunkCount: chunks.length })
+  const chunkSize = getDefaultChunkSize(bytes)
+  const chunks = splitBytes(bytes, chunkSize)
+  writeBytes(bytes, chunkSize, () => {
+    callback?.({ byteLength: bytes.length, chunkCount: chunks.length, complete: true, msg: 'writeData complete' })
   }, (message: string) => {
     const deviceId = connectedPrinter == null ? '' : connectedPrinter!.deviceId
     emitConnectState('connectFail', deviceId, message)
+    callback?.({ byteLength: bytes.length, chunkCount: chunks.length, complete: false, msg: message })
   })
 }
 
@@ -374,7 +517,7 @@ export const printEsc: PrintEsc = function (options: PrintEscOptions) {
     return
   }
 
-  writeBytes(options.bytes, options.chunkSize ?? 20, () => {
+  writeBytes(options.bytes, options.chunkSize ?? getDefaultChunkSize(options.bytes), () => {
     options.success?.()
     runComplete(options.complete ?? null)
   }, (message: string) => {
