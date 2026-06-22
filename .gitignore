@@ -21,3 +21,4 @@ dist
 *.sw?
 
 .codegraph
+.pnpm-store
