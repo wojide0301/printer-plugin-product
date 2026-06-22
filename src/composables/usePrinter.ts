@@ -1,5 +1,5 @@
-import { computed, ref } from 'vue'
 import { requestAndroidPermission } from '@/uni_modules/x-perm-apply-instr-v2/js_sdk/index.js'
+import type { PrinterDevice, PrinterError } from '@/uni_modules/yuntu-printer-uts'
 import {
   addPrintAndFeedLines,
   checkBuiltInPrinter,
@@ -19,19 +19,13 @@ import {
   writeData,
 } from '@/uni_modules/yuntu-printer-uts'
 
-export interface PrinterDeviceView {
-  deviceId: string
-  name: string
-  rssi: number
-  serviceUUIDs: string[]
-  type?: PrinterConnectionType
-}
-
 export type PrinterConnectionType = 'bluetooth' | 'wifi' | 'noryox'
+export type PrinterDeviceView = PrinterDevice
 
 const BLUETOOTH_SCAN_PERMISSION = 'android.permission.BLUETOOTH_SCAN'
 const BLUETOOTH_CONNECT_PERMISSION = 'android.permission.BLUETOOTH_CONNECT'
 const ACCESS_FINE_LOCATION_PERMISSION = 'android.permission.ACCESS_FINE_LOCATION'
+type BluetoothPermission = typeof BLUETOOTH_SCAN_PERMISSION | typeof BLUETOOTH_CONNECT_PERMISSION | typeof ACCESS_FINE_LOCATION_PERMISSION
 
 const bluetoothPermissionExplainMap = {
   [BLUETOOTH_SCAN_PERMISSION]: {
@@ -67,8 +61,10 @@ export function usePrinter() {
   })
   const isConnected = computed(() => connectedDeviceId.value.length > 0)
 
-  function getBluetoothPermissions() {
-    const systemInfo = uni.getSystemInfoSync()
+  function getBluetoothPermissions(): BluetoothPermission[] {
+    const systemInfo = uni.getSystemInfoSync() as UniApp.GetSystemInfoResult & {
+      osAndroidAPILevel?: number
+    }
     if (systemInfo.uniPlatform !== 'app' || systemInfo.platform !== 'android') {
       return []
     }
@@ -99,7 +95,7 @@ export function usePrinter() {
     return true
   }
 
-  function showError(err: { errMsg?: string }) {
+  function showError(err: Pick<PrinterError, 'errMsg'>) {
     console.log(err.errMsg)
     lastEvent.value = err.errMsg ?? '打印机操作失败'
     uni.showToast({

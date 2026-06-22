@@ -6,6 +6,7 @@
 type _LocationUrl =
   "/pages/index/index" |
   "/pages/about/index" |
+  "/pages/printer/commands" |
   "/pages/printer/index" |
   "/subPages/ci/index" |
   "/subPages/create-uni/index" |

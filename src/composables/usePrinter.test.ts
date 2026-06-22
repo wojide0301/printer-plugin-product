@@ -36,7 +36,7 @@ describe('usePrinter', () => {
       options.success?.({ available: false })
     })
 
-    ;(globalThis as { uni: UniApp.Uni }).uni = {
+    ;(globalThis as unknown as { uni: UniApp.Uni }).uni = {
       getSystemInfoSync: vi.fn(() => ({
         osAndroidAPILevel: 33,
         platform: 'android',

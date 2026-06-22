@@ -9,6 +9,7 @@ definePage({
   },
 })
 
+const router = useRouter()
 const {
   bindEvents,
   connectionType,
@@ -20,8 +21,6 @@ const {
   isConnected,
   lastEvent,
   loading,
-  printSample,
-  printSampleByEscCommands,
   refreshConnected,
   scan,
   statusText,
@@ -41,6 +40,12 @@ function getDeviceValue(device: { type?: string, rssi: number }) {
   }
   return `RSSI ${device.rssi}`
 }
+
+function openCommandTests() {
+  router.push({
+    name: 'printerCommands',
+  })
+}
 </script>
 
 <template>
@@ -56,13 +61,7 @@ function getDeviceValue(device: { type?: string, rssi: number }) {
 
       <demo-block title="基础功能" transparent>
         <view class="px-4 pb-3">
-          <wd-segmented
-            v-model:value="connectionType"
-            :options="[
-              { label: '蓝牙', value: 'bluetooth' },
-              { label: 'Wi-Fi', value: 'wifi' },
-            ]"
-          />
+          <wd-segmented v-model:value="connectionType" :options="['bluetooth', 'wifi']" />
         </view>
         <view v-if="connectionType === 'wifi'" class="px-4 pb-3">
           <wd-cell-group border custom-class="rounded-2! overflow-hidden">
@@ -80,11 +79,8 @@ function getDeviceValue(device: { type?: string, rssi: number }) {
           <wd-button v-if="connectionType === 'wifi'" block type="primary" :loading="loading" @click="connectWifi">
             连接 Wi-Fi
           </wd-button>
-          <wd-button block type="success" :disabled="!isConnected" :loading="loading" @click="printSample">
-            语义打印
-          </wd-button>
-          <wd-button plain block type="success" :disabled="!isConnected" :loading="loading" @click="printSampleByEscCommands">
-            ESC打印
+          <wd-button block type="success" :disabled="!isConnected" :loading="loading" @click="openCommandTests">
+            打印命令测试
           </wd-button>
           <wd-button type="danger" plain block :disabled="!isConnected" :loading="loading" @click="disconnect">
             断开连接

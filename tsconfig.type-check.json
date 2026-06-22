@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "@dcloudio/types",
+      "@mini-types/alipay",
+      "miniprogram-api-typings",
+      "@uni-helper/uni-types",
+      "uni-echarts/global"
+    ]
+  },
+  "exclude": [
+    "src/uni_modules/mp-html/components/mp-html/node/node.vue",
+    "src/components.d.ts"
+  ]
+}

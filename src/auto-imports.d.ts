@@ -7,7 +7,7 @@ export {}
 declare global {
   const $$userConfigMap: typeof import('./api/index')['$$userConfigMap']
   const Apis: typeof import('./api/index')['Apis']
-  const CommonUtil: typeof import('@wot-ui/ui')['CommonUtil']
+  const CommonUtil: typeof import('@wot-ui/ui/common/util')
   const EffectScope: typeof import('vue')['EffectScope']
   const PrinterEscBuilder: typeof import('./utils/printerEsc')['PrinterEscBuilder']
   const acceptHMRUpdate: typeof import('pinia')['acceptHMRUpdate']
@@ -114,6 +114,7 @@ declare global {
   const onUpdated: typeof import('vue')['onUpdated']
   const pausableWatch: typeof import('@vueuse/core')['pausableWatch']
   const persistPlugin: typeof import('./store/persist')['persistPlugin']
+  const printerCommandTests: typeof import('./utils/printerCommandTests')['printerCommandTests']
   const provide: typeof import('vue')['provide']
   const provideLocal: typeof import('@vueuse/core')['provideLocal']
   const reactify: typeof import('@vueuse/core')['reactify']
@@ -202,7 +203,7 @@ declare global {
   const useDeviceOrientation: typeof import('@vueuse/core')['useDeviceOrientation']
   const useDevicePixelRatio: typeof import('@vueuse/core')['useDevicePixelRatio']
   const useDevicesList: typeof import('@vueuse/core')['useDevicesList']
-  const useDialog: typeof import('@wot-ui/ui')['useDialog']
+  const useDialog: typeof import('@wot-ui/ui/components/wd-dialog')['useDialog']
   const useDisplayMedia: typeof import('@vueuse/core')['useDisplayMedia']
   const useDocumentVisibility: typeof import('@vueuse/core')['useDocumentVisibility']
   const useDraggable: typeof import('@vueuse/core')['useDraggable']
@@ -253,7 +254,7 @@ declare global {
   const useMutationObserver: typeof import('@vueuse/core')['useMutationObserver']
   const useNavigatorLanguage: typeof import('@vueuse/core')['useNavigatorLanguage']
   const useNetwork: typeof import('@vueuse/core')['useNetwork']
-  const useNotify: typeof import('@wot-ui/ui')['useNotify']
+  const useNotify: typeof import('@wot-ui/ui/components/wd-notify')['useNotify']
   const useNow: typeof import('@vueuse/core')['useNow']
   const useObjectUrl: typeof import('@vueuse/core')['useObjectUrl']
   const useOffsetPagination: typeof import('@vueuse/core')['useOffsetPagination']
@@ -316,7 +317,7 @@ declare global {
   const useTitle: typeof import('@vueuse/core')['useTitle']
   const useToNumber: typeof import('@vueuse/core')['useToNumber']
   const useToString: typeof import('@vueuse/core')['useToString']
-  const useToast: typeof import('@wot-ui/ui')['useToast']
+  const useToast: typeof import('@wot-ui/ui/components/wd-toast')['useToast']
   const useToggle: typeof import('@vueuse/core')['useToggle']
   const useTransition: typeof import('@vueuse/core')['useTransition']
   const useUrlSearchParams: typeof import('@vueuse/core')['useUrlSearchParams']
@@ -364,7 +365,7 @@ declare module 'vue' {
   interface ComponentCustomProperties {
     readonly $$userConfigMap: UnwrapRef<typeof import('./api/index')['$$userConfigMap']>
     readonly Apis: UnwrapRef<typeof import('./api/index')['Apis']>
-    readonly CommonUtil: UnwrapRef<typeof import('@wot-ui/ui')['CommonUtil']>
+    readonly CommonUtil: UnwrapRef<typeof import('@wot-ui/ui/common/util')>
     readonly EffectScope: UnwrapRef<typeof import('vue')['EffectScope']>
     readonly PrinterEscBuilder: UnwrapRef<typeof import('./utils/printerEsc')['PrinterEscBuilder']>
     readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
@@ -471,6 +472,7 @@ declare module 'vue' {
     readonly onUpdated: UnwrapRef<typeof import('vue')['onUpdated']>
     readonly pausableWatch: UnwrapRef<typeof import('@vueuse/core')['pausableWatch']>
     readonly persistPlugin: UnwrapRef<typeof import('./store/persist')['persistPlugin']>
+    readonly printerCommandTests: UnwrapRef<typeof import('./utils/printerCommandTests')['printerCommandTests']>
     readonly provide: UnwrapRef<typeof import('vue')['provide']>
     readonly provideLocal: UnwrapRef<typeof import('@vueuse/core')['provideLocal']>
     readonly reactify: UnwrapRef<typeof import('@vueuse/core')['reactify']>
@@ -559,7 +561,7 @@ declare module 'vue' {
     readonly useDeviceOrientation: UnwrapRef<typeof import('@vueuse/core')['useDeviceOrientation']>
     readonly useDevicePixelRatio: UnwrapRef<typeof import('@vueuse/core')['useDevicePixelRatio']>
     readonly useDevicesList: UnwrapRef<typeof import('@vueuse/core')['useDevicesList']>
-    readonly useDialog: UnwrapRef<typeof import('@wot-ui/ui')['useDialog']>
+    readonly useDialog: UnwrapRef<typeof import('@wot-ui/ui/components/wd-dialog')['useDialog']>
     readonly useDisplayMedia: UnwrapRef<typeof import('@vueuse/core')['useDisplayMedia']>
     readonly useDocumentVisibility: UnwrapRef<typeof import('@vueuse/core')['useDocumentVisibility']>
     readonly useDraggable: UnwrapRef<typeof import('@vueuse/core')['useDraggable']>
@@ -610,7 +612,7 @@ declare module 'vue' {
     readonly useMutationObserver: UnwrapRef<typeof import('@vueuse/core')['useMutationObserver']>
     readonly useNavigatorLanguage: UnwrapRef<typeof import('@vueuse/core')['useNavigatorLanguage']>
     readonly useNetwork: UnwrapRef<typeof import('@vueuse/core')['useNetwork']>
-    readonly useNotify: UnwrapRef<typeof import('@wot-ui/ui')['useNotify']>
+    readonly useNotify: UnwrapRef<typeof import('@wot-ui/ui/components/wd-notify')['useNotify']>
     readonly useNow: UnwrapRef<typeof import('@vueuse/core')['useNow']>
     readonly useObjectUrl: UnwrapRef<typeof import('@vueuse/core')['useObjectUrl']>
     readonly useOffsetPagination: UnwrapRef<typeof import('@vueuse/core')['useOffsetPagination']>
@@ -673,7 +675,7 @@ declare module 'vue' {
     readonly useTitle: UnwrapRef<typeof import('@vueuse/core')['useTitle']>
     readonly useToNumber: UnwrapRef<typeof import('@vueuse/core')['useToNumber']>
     readonly useToString: UnwrapRef<typeof import('@vueuse/core')['useToString']>
-    readonly useToast: UnwrapRef<typeof import('@wot-ui/ui')['useToast']>
+    readonly useToast: UnwrapRef<typeof import('@wot-ui/ui/components/wd-toast')['useToast']>
     readonly useToggle: UnwrapRef<typeof import('@vueuse/core')['useToggle']>
     readonly useTransition: UnwrapRef<typeof import('@vueuse/core')['useTransition']>
     readonly useUrlSearchParams: UnwrapRef<typeof import('@vueuse/core')['useUrlSearchParams']>

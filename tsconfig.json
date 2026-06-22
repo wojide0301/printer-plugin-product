@@ -25,5 +25,8 @@
     "src/**/*.d.ts",
     "src/**/*.tsx",
     "src/**/*.vue"
+  ],
+  "exclude": [
+    "src/uni_modules/mp-html/components/mp-html/node/node.vue"
   ]
 }
