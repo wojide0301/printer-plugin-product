@@ -1,5 +1,6 @@
 ## 0.2.0
 
+- Adds Noryox NB55 / Handheld_POS_V28 built-in printer support through the Android system AIDL printer service.
 - Adds Wi-Fi TCP printer connection by IP and port.
 - Reuses ESC/POS printing APIs across Bluetooth and Wi-Fi connections.
 - Adds Wi-Fi connection state, write callback status, and network permissions.

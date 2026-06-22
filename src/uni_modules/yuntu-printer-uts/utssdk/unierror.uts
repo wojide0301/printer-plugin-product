@@ -11,6 +11,9 @@ export const PRINTER_ERROR_NOT_CONNECTED = 1008
 export const PRINTER_ERROR_WRITE_FAILED = 1009
 export const PRINTER_ERROR_INVALID_PAYLOAD = 1010
 export const PRINTER_ERROR_UNSUPPORTED_PLATFORM = 1011
+export const PRINTER_ERROR_BUILT_IN_UNAVAILABLE = 1012
+export const PRINTER_ERROR_SERVICE_BIND_FAILED = 1013
+export const PRINTER_ERROR_SERVICE_NOT_CONNECTED = 1014
 
 export function createPrinterError(errCode: number, detail: string): PrinterError {
   return {

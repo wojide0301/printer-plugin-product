@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { requestAndroidPermission } from '@/uni_modules/x-perm-apply-instr-v2/js_sdk/index.js'
 import {
   addPrintAndFeedLines,
+  checkBuiltInPrinter,
   clearCommandBuffer,
   connectNet,
   connectPrinter,
@@ -23,9 +24,10 @@ export interface PrinterDeviceView {
   name: string
   rssi: number
   serviceUUIDs: string[]
+  type?: PrinterConnectionType
 }
 
-export type PrinterConnectionType = 'bluetooth' | 'wifi'
+export type PrinterConnectionType = 'bluetooth' | 'wifi' | 'noryox'
 
 const BLUETOOTH_SCAN_PERMISSION = 'android.permission.BLUETOOTH_SCAN'
 const BLUETOOTH_CONNECT_PERMISSION = 'android.permission.BLUETOOTH_CONNECT'
@@ -98,7 +100,7 @@ export function usePrinter() {
   }
 
   function showError(err: { errMsg?: string }) {
-    console.log(errMsg)
+    console.log(err.errMsg)
     lastEvent.value = err.errMsg ?? '打印机操作失败'
     uni.showToast({
       title: err.errMsg ?? '打印机操作失败',
@@ -106,10 +108,38 @@ export function usePrinter() {
     })
   }
 
+  function detectBuiltInPrinter() {
+    return new Promise<PrinterDeviceView | null>((resolve) => {
+      const systemInfo = uni.getSystemInfoSync()
+      if (systemInfo.uniPlatform !== 'app' || systemInfo.platform !== 'android') {
+        resolve(null)
+        return
+      }
+
+      checkBuiltInPrinter({
+        success(res) {
+          resolve(res.available && res.device ? res.device : null)
+        },
+        fail() {
+          resolve(null)
+        },
+      })
+    })
+  }
+
   async function scan() {
     connectionType.value = 'bluetooth'
     loading.value = true
     devices.value = []
+
+    const builtInPrinter = await detectBuiltInPrinter()
+    if (builtInPrinter) {
+      devices.value = [builtInPrinter]
+      connectionType.value = 'noryox'
+      lastEvent.value = '发现内置打印机'
+      loading.value = false
+      return
+    }
 
     const hasPermission = await ensureBluetoothPermission()
     if (!hasPermission) {
@@ -138,13 +168,12 @@ export function usePrinter() {
   }
 
   function connect(deviceId: string) {
-    connectionType.value = 'bluetooth'
     loading.value = true
     connectPrinter({
       deviceId,
       success(res) {
         connectedDeviceId.value = res.deviceId
-        connectionType.value = 'bluetooth'
+        connectionType.value = res.type ?? 'bluetooth'
         lastEvent.value = 'connectSuccess'
         uni.showToast({
           title: '连接成功',
@@ -193,6 +222,9 @@ export function usePrinter() {
           connectionType.value = 'wifi'
           wifiIp.value = res.ip ?? wifiIp.value
           wifiPort.value = String(res.port ?? wifiPort.value)
+        }
+        else if (res.type === 'noryox') {
+          connectionType.value = 'noryox'
         }
         else if (res.deviceId) {
           connectionType.value = 'bluetooth'

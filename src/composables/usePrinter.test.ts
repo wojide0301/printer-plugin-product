@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const requestAndroidPermission = vi.fn()
+const checkBuiltInPrinter = vi.fn()
 const connectNet = vi.fn()
 const scanPrinters = vi.fn()
 
@@ -10,6 +11,7 @@ vi.mock('@/uni_modules/x-perm-apply-instr-v2/js_sdk/index.js', () => ({
 
 vi.mock('@/uni_modules/yuntu-printer-uts', () => ({
   addPrintAndFeedLines: vi.fn(),
+  checkBuiltInPrinter,
   clearCommandBuffer: vi.fn(),
   connectNet,
   connectPrinter: vi.fn(),
@@ -30,6 +32,9 @@ describe('usePrinter', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
+    checkBuiltInPrinter.mockImplementation((options) => {
+      options.success?.({ available: false })
+    })
 
     ;(globalThis as { uni: UniApp.Uni }).uni = {
       getSystemInfoSync: vi.fn(() => ({
@@ -67,6 +72,39 @@ describe('usePrinter', () => {
     expect(requestAndroidPermission).toHaveBeenCalledWith('android.permission.BLUETOOTH_SCAN', expect.any(Object))
     expect(requestAndroidPermission).toHaveBeenCalledWith('android.permission.BLUETOOTH_CONNECT', expect.any(Object))
     expect(scanPrinters).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the Noryox built-in printer without requesting bluetooth permission', async () => {
+    checkBuiltInPrinter.mockImplementation((options) => {
+      options.success?.({
+        available: true,
+        device: {
+          deviceId: 'noryox:built-in',
+          name: 'Noryox NB55 Built-in Printer',
+          rssi: 0,
+          serviceUUIDs: ['noryox-aidl'],
+          type: 'noryox',
+        },
+      })
+    })
+    const { usePrinter } = await import('./usePrinter')
+    const printer = usePrinter()
+
+    await printer.scan()
+
+    expect(requestAndroidPermission).not.toHaveBeenCalled()
+    expect(scanPrinters).not.toHaveBeenCalled()
+    expect(printer.devices.value).toEqual([
+      {
+        deviceId: 'noryox:built-in',
+        name: 'Noryox NB55 Built-in Printer',
+        rssi: 0,
+        serviceUUIDs: ['noryox-aidl'],
+        type: 'noryox',
+      },
+    ])
+    expect(printer.lastEvent.value).toBe('发现内置打印机')
+    expect(printer.loading.value).toBe(false)
   })
 
   it('connects wifi printer without requesting bluetooth permissions', async () => {

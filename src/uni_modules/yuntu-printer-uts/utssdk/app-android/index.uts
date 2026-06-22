@@ -1,22 +1,29 @@
 import { BluetoothAdapter, BluetoothDevice, BluetoothGatt, BluetoothGattCallback, BluetoothGattCharacteristic, BluetoothGattService, BluetoothManager, BluetoothProfile } from 'android.bluetooth'
 import { BluetoothLeScanner, ScanCallback, ScanResult } from 'android.bluetooth.le'
-import { Context } from 'android.content'
+import { ComponentName, Context, Intent, ServiceConnection } from 'android.content'
 import { PackageManager } from 'android.content.pm'
-import { Build, Handler, Looper } from 'android.os'
+import { Build, Handler, IBinder, Looper, Parcel } from 'android.os'
 import { BufferedInputStream, BufferedOutputStream } from 'java.io'
 import { InetSocketAddress, Socket } from 'java.net'
 import { UUID } from 'java.util'
 import { splitBytes } from '../common/chunk.uts'
 import { buildReceipt, escFourText58 as buildFourText58, escThreeText58 as buildThreeText58, escTwoText58 as buildTwoText58, PrinterEscBuilder } from '../common/esc.uts'
 import type { ReceiptPayload } from '../common/esc.uts'
-import type { AddPrintAndFeedLines, BlueStateCallback, ClearCommandBuffer, ConnectBlue, ConnectNet, ConnectNetOptions, ConnectPrinter, ConnectPrinterOptions, ConnectStateCallback, DataReceiveCallback, Disconnect, DisconnectPrinter, DisconnectPrinterOptions, EscBytesCommand, EscCutPaper, EscImage, EscInitializePrinter, EscJustificationCommand, EscNewLine, EscQRCode, EscSetCharcterSize, EscStringCommand, EscText, EscThreeText58, EscTurnEmphasizedMode, EscTwoText58, EscFourText58, GetConnectedPrinter, GetConnectedPrinterOptions, IsConnect, OnBlueStateChange, OnConnectStateChange, OnDataReceive, PrintEsc, PrintEscOptions, PrintText, PrintTextOptions, PrinterConnection, PrinterDevice, ScanBlue, ScanPrinters, ScanPrintersOptions, StopScanBlue, StopScanPrinters, StopScanPrintersOptions, WriteData, WriteDataCallback } from '../interface.uts'
-import { createPrinterError, PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, PRINTER_ERROR_CONNECT_FAILED, PRINTER_ERROR_DEVICE_NOT_FOUND, PRINTER_ERROR_INVALID_PAYLOAD, PRINTER_ERROR_NOT_CONNECTED, PRINTER_ERROR_PERMISSION_DENIED, PRINTER_ERROR_SCAN_FAILED, PRINTER_ERROR_SERVICE_NOT_FOUND, PRINTER_ERROR_WRITE_FAILED } from '../unierror.uts'
+import type { AddPrintAndFeedLines, BlueStateCallback, CheckBuiltInPrinter, CheckBuiltInPrinterOptions, ClearCommandBuffer, ConnectBlue, ConnectNet, ConnectNetOptions, ConnectPrinter, ConnectPrinterOptions, ConnectStateCallback, DataReceiveCallback, Disconnect, DisconnectPrinter, DisconnectPrinterOptions, EscBytesCommand, EscCutPaper, EscImage, EscInitializePrinter, EscJustificationCommand, EscNewLine, EscQRCode, EscSetCharcterSize, EscStringCommand, EscText, EscThreeText58, EscTurnEmphasizedMode, EscTwoText58, EscFourText58, GetConnectedPrinter, GetConnectedPrinterOptions, IsConnect, OnBlueStateChange, OnConnectStateChange, OnDataReceive, PrintEsc, PrintEscOptions, PrintText, PrintTextOptions, PrinterConnection, PrinterDevice, ScanBlue, ScanPrinters, ScanPrintersOptions, StopScanBlue, StopScanPrinters, StopScanPrintersOptions, WriteData, WriteDataCallback } from '../interface.uts'
+import { createPrinterError, PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, PRINTER_ERROR_BUILT_IN_UNAVAILABLE, PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, PRINTER_ERROR_CONNECT_FAILED, PRINTER_ERROR_DEVICE_NOT_FOUND, PRINTER_ERROR_INVALID_PAYLOAD, PRINTER_ERROR_NOT_CONNECTED, PRINTER_ERROR_PERMISSION_DENIED, PRINTER_ERROR_SCAN_FAILED, PRINTER_ERROR_SERVICE_BIND_FAILED, PRINTER_ERROR_SERVICE_NOT_FOUND, PRINTER_ERROR_WRITE_FAILED } from '../unierror.uts'
 
 const DEFAULT_WRITE_CHARACTERISTIC_UUIDS = [
   '0000ff02-0000-1000-8000-00805f9b34fb',
   '0000ff01-0000-1000-8000-00805f9b34fb',
   '49535343-8841-43f4-a8d4-ecbe34729bb3',
 ]
+const NORYOX_PACKAGE_NAME = 'com.incar.printerservice'
+const NORYOX_SERVICE_ACTION = 'com.incar.printerservice.IPrinterService'
+const NORYOX_INTERFACE_DESCRIPTOR = 'net.nyx.printerservice.print.IPrinterService'
+const NORYOX_TRANSACTION_PRINT_ESCPOS_DATA: Int = 19
+const NORYOX_BUILT_IN_DEVICE_ID = 'noryox:built-in'
+const NORYOX_SERVICE_UUID = 'noryox-aidl'
+const NORYOX_WRITE_CHARACTERISTIC_UUID = 'printEscposData'
 
 let bluetoothAdapter: BluetoothAdapter | null = null
 let scanner: BluetoothLeScanner | null = null
@@ -28,6 +35,9 @@ let wifiSocket: Socket | null = null
 let wifiOutputStream: BufferedOutputStream | null = null
 let wifiInputStream: BufferedInputStream | null = null
 let wifiReading = false
+let noryoxPrinterService: IBinder | null = null
+let noryoxServiceBound = false
+let pendingNoryoxConnectOptions: ConnectPrinterOptions | null = null
 let connectedPrinter: PrinterConnection | null = null
 let blueStateCallback: BlueStateCallback | null = null
 let connectStateCallback: ConnectStateCallback | null = null
@@ -114,6 +124,31 @@ function bytesToNative(chunk: number[]): kotlin.ByteArray {
   return byteValues
 }
 
+function parsePrinterPort(port: string | number): number {
+  try {
+    return port.toString().toInt()
+  }
+  catch (_error) {
+    return 0
+  }
+}
+
+function printNoryoxEscposData(service: IBinder, bytes: kotlin.ByteArray): kotlin.ByteArray | null {
+  const data = Parcel.obtain()
+  const reply = Parcel.obtain()
+  try {
+    data.writeInterfaceToken(NORYOX_INTERFACE_DESCRIPTOR)
+    data.writeByteArray(bytes)
+    service.transact(NORYOX_TRANSACTION_PRINT_ESCPOS_DATA, data, reply, 0)
+    reply.readException()
+    return reply.createByteArray()
+  }
+  finally {
+    reply.recycle()
+    data.recycle()
+  }
+}
+
 function createEmptyConnection(): PrinterConnection {
   return {
     deviceId: '',
@@ -134,6 +169,51 @@ function createWifiConnection(ip: string, port: number): PrinterConnection {
     type: 'wifi',
     writeCharacteristicUUID: '',
   }
+}
+
+function createNoryoxDevice(): PrinterDevice {
+  return {
+    deviceId: NORYOX_BUILT_IN_DEVICE_ID,
+    name: 'Noryox NB55 Built-in Printer',
+    rssi: 0,
+    serviceUUIDs: [NORYOX_SERVICE_UUID],
+    type: 'noryox',
+  }
+}
+
+function createNoryoxConnection(): PrinterConnection {
+  return {
+    deviceId: NORYOX_BUILT_IN_DEVICE_ID,
+    name: 'Noryox NB55 Built-in Printer',
+    serviceUUID: NORYOX_SERVICE_UUID,
+    type: 'noryox',
+    writeCharacteristicUUID: NORYOX_WRITE_CHARACTERISTIC_UUID,
+  }
+}
+
+function isNoryoxDeviceId(deviceId: string): boolean {
+  return deviceId == NORYOX_BUILT_IN_DEVICE_ID
+}
+
+function isPackageInstalled(packageName: string): boolean {
+  const context = getContext()
+  if (context == null) {
+    return false
+  }
+  try {
+    context.getPackageManager().getPackageInfo(packageName, 0)
+    return true
+  }
+  catch (_error) {
+    return false
+  }
+}
+
+function createNoryoxIntent(): Intent {
+  const intent = new Intent()
+  intent.setPackage(NORYOX_PACKAGE_NAME)
+  intent.setAction(NORYOX_SERVICE_ACTION)
+  return intent
 }
 
 function closeWifiConnection() {
@@ -183,6 +263,72 @@ function readWifiData() {
       }
     }
   }).start()
+}
+
+class NoryoxPrinterServiceConnection implements ServiceConnection {
+  override onServiceConnected(_name: ComponentName, service: IBinder) {
+    noryoxPrinterService = service
+    noryoxServiceBound = true
+    connectedPrinter = createNoryoxConnection()
+    const options = pendingNoryoxConnectOptions
+    pendingNoryoxConnectOptions = null
+    if (options != null) {
+      emitConnectState('connectSuccess', NORYOX_BUILT_IN_DEVICE_ID, '')
+      options.success?.(connectedPrinter!)
+      runComplete(options.complete ?? null)
+    }
+  }
+
+  override onServiceDisconnected(_name: ComponentName) {
+    noryoxPrinterService = null
+    noryoxServiceBound = false
+    if (connectedPrinter != null && connectedPrinter!.deviceId == NORYOX_BUILT_IN_DEVICE_ID) {
+      connectedPrinter = null
+      emitConnectState('disconnect', NORYOX_BUILT_IN_DEVICE_ID, '')
+    }
+  }
+}
+
+const noryoxServiceConnection = new NoryoxPrinterServiceConnection()
+
+function bindNoryoxPrinter(options: ConnectPrinterOptions) {
+  const context = getContext()
+  if (context == null) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_BUILT_IN_UNAVAILABLE, 'Android context is unavailable.'))
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  if (!isPackageInstalled(NORYOX_PACKAGE_NAME)) {
+    options.fail?.(createPrinterError(PRINTER_ERROR_BUILT_IN_UNAVAILABLE, 'Noryox printer service is not installed.'))
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  if (noryoxPrinterService != null) {
+    connectedPrinter = createNoryoxConnection()
+    emitConnectState('connectSuccess', NORYOX_BUILT_IN_DEVICE_ID, '')
+    options.success?.(connectedPrinter!)
+    runComplete(options.complete ?? null)
+    return
+  }
+
+  pendingNoryoxConnectOptions = options
+  const bound = context.bindService(createNoryoxIntent(), noryoxServiceConnection, Context.BIND_AUTO_CREATE)
+  if (!bound) {
+    pendingNoryoxConnectOptions = null
+    options.fail?.(createPrinterError(PRINTER_ERROR_SERVICE_BIND_FAILED, 'Failed to bind Noryox printer service.'))
+    runComplete(options.complete ?? null)
+  }
+}
+
+function unbindNoryoxPrinter() {
+  const context = getContext()
+  if (context != null && noryoxServiceBound) {
+    context.unbindService(noryoxServiceConnection)
+  }
+  noryoxPrinterService = null
+  noryoxServiceBound = false
 }
 
 class PrinterScanCallback extends ScanCallback {
@@ -277,10 +423,26 @@ class PrinterGattCallback extends BluetoothGattCallback {
     emitDataReceive(bytesFromNative(value))
   }
 
+  @Suppress('DEPRECATION', 'OVERRIDE_DEPRECATION')
   override onCharacteristicChanged(_gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
     const value = characteristic.getValue()
     emitDataReceive(bytesFromNative(value))
   }
+}
+
+export const checkBuiltInPrinter: CheckBuiltInPrinter = function (options: CheckBuiltInPrinterOptions) {
+  if (isPackageInstalled(NORYOX_PACKAGE_NAME)) {
+    options.success?.({
+      available: true,
+      device: createNoryoxDevice(),
+    })
+  }
+  else {
+    options.success?.({
+      available: false,
+    })
+  }
+  runComplete(options.complete ?? null)
 }
 
 export const scanPrinters: ScanPrinters = function (options: ScanPrintersOptions) {
@@ -339,6 +501,11 @@ export const stopScanPrinters: StopScanPrinters = function (options: StopScanPri
 export const connectPrinter: ConnectPrinter = function (options: ConnectPrinterOptions) {
   closeWifiConnection()
 
+  if (isNoryoxDeviceId(options.deviceId)) {
+    bindNoryoxPrinter(options)
+    return
+  }
+
   const adapter = getAdapter()
   if (adapter == null || !adapter.isEnabled()) {
     options.fail?.(createPrinterError(PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, 'Bluetooth is unavailable or disabled.'))
@@ -366,7 +533,7 @@ export const connectPrinter: ConnectPrinter = function (options: ConnectPrinterO
 }
 
 export const connectNet: ConnectNet = function (options: ConnectNetOptions) {
-  const port = Number(options.port)
+  const port = parsePrinterPort(options.port)
   if (options.ip.length == 0 || port <= 0) {
     options.fail?.(createPrinterError(PRINTER_ERROR_CONNECT_FAILED, 'Wi-Fi printer ip and port are required.'))
     runComplete(options.complete ?? null)
@@ -399,6 +566,15 @@ export const connectNet: ConnectNet = function (options: ConnectNetOptions) {
 }
 
 export const disconnectPrinter: DisconnectPrinter = function (options: DisconnectPrinterOptions) {
+  if (connectedPrinter != null && connectedPrinter!.deviceId == NORYOX_BUILT_IN_DEVICE_ID) {
+    unbindNoryoxPrinter()
+    connectedPrinter = null
+    emitConnectState('disconnect', NORYOX_BUILT_IN_DEVICE_ID, '')
+    options.success?.()
+    runComplete(options.complete ?? null)
+    return
+  }
+
   connectedGatt?.disconnect()
   connectedGatt?.close()
   connectedGatt = null
@@ -451,8 +627,7 @@ function writeBluetoothBytes(bytes: number[], chunkSize: number, success: () => 
       ok = connectedGatt!.writeCharacteristic(writeCharacteristic!, byteValues, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) == BluetoothGatt.GATT_SUCCESS
     }
     else {
-      writeCharacteristic!.setValue(byteValues)
-      ok = connectedGatt!.writeCharacteristic(writeCharacteristic)
+      ok = writeLegacyBluetoothCharacteristic(byteValues)
     }
     if (!ok) {
       fail(`Failed to write chunk ${index + 1}.`)
@@ -463,9 +638,38 @@ function writeBluetoothBytes(bytes: number[], chunkSize: number, success: () => 
   success()
 }
 
+@Suppress('DEPRECATION')
+function writeLegacyBluetoothCharacteristic(byteValues: kotlin.ByteArray): boolean {
+  writeCharacteristic!.setValue(byteValues)
+  return connectedGatt!.writeCharacteristic(writeCharacteristic!)
+}
+
+function writeNoryoxBytes(bytes: number[], success: () => void, fail: (message: string) => void) {
+  const service = noryoxPrinterService
+  if (service == null) {
+    fail('Noryox printer service is not connected.')
+    return
+  }
+
+  try {
+    const response = printNoryoxEscposData(service, bytesToNative(bytes))
+    if (response != null && response.size > 0) {
+      emitDataReceive(bytesFromNative(response))
+    }
+    success()
+  }
+  catch (_error) {
+    fail('Failed to write ESC/POS data to Noryox printer service.')
+  }
+}
+
 function writeBytes(bytes: number[], chunkSize: number, success: () => void, fail: (message: string) => void) {
   if (connectedPrinter?.type == 'wifi') {
     writeWifiBytes(bytes, chunkSize, success, fail)
+    return
+  }
+  if (connectedPrinter?.type == 'noryox') {
+    writeNoryoxBytes(bytes, success, fail)
     return
   }
 
@@ -473,7 +677,7 @@ function writeBytes(bytes: number[], chunkSize: number, success: () => void, fai
 }
 
 function getDefaultChunkSize(bytes: number[]): number {
-  return connectedPrinter?.type == 'wifi' ? bytes.length : 20
+  return connectedPrinter?.type == 'wifi' || connectedPrinter?.type == 'noryox' ? bytes.length : 20
 }
 
 export const scanBlue: ScanBlue = function (callback: (device: PrinterDevice) => void) {
@@ -506,6 +710,9 @@ export const disconnect: Disconnect = function () {
 export const isConnect: IsConnect = function () {
   if (connectedPrinter?.type == 'wifi') {
     return wifiSocket != null && wifiSocket!.isConnected() && !wifiSocket!.isClosed()
+  }
+  if (connectedPrinter?.type == 'noryox') {
+    return noryoxPrinterService != null
   }
   return connectedGatt != null && writeCharacteristic != null
 }

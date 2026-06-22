@@ -2,7 +2,7 @@
   "id": "yuntu-printer-uts",
   "displayName": "Yuntu Printer UTS",
   "version": "0.2.0",
-  "description": "Android and iOS BLE and Wi-Fi printer plugin for uni-app using ESC/POS commands.",
+  "description": "Android and iOS BLE, Wi-Fi, and Noryox built-in printer plugin for uni-app using ESC/POS commands.",
   "keywords": [
     "uts",
     "bluetooth",
@@ -30,8 +30,8 @@
     },
     "declaration": {
       "ads": "无",
-        "data": "插件会使用蓝牙扫描、蓝牙连接、蓝牙写入和局域网 Wi-Fi 打印机连接能力，不采集用户账号信息。",
-        "permissions": "Android: BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_SCAN, BLUETOOTH_CONNECT, ACCESS_FINE_LOCATION, INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE; iOS: Bluetooth Always Usage Description, Local Network Usage Description."
+        "data": "插件会使用蓝牙扫描、蓝牙连接、蓝牙写入、局域网 Wi-Fi 打印机连接能力，以及 Noryox 内置打印服务绑定能力，不采集用户账号信息。",
+        "permissions": "Android: BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_SCAN, BLUETOOTH_CONNECT, ACCESS_FINE_LOCATION, INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, package visibility for com.incar.printerservice; iOS: Bluetooth Always Usage Description, Local Network Usage Description."
     },
     "npmurl": ""
   },

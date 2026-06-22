@@ -34,6 +34,13 @@ onMounted(() => {
   bindEvents()
   refreshConnected()
 })
+
+function getDeviceValue(device: { type?: string, rssi: number }) {
+  if (device.type === 'noryox') {
+    return '内置'
+  }
+  return `RSSI ${device.rssi}`
+}
 </script>
 
 <template>
@@ -92,7 +99,7 @@ onMounted(() => {
             :key="device.deviceId"
             :title="device.name || 'Unknown Printer'"
             :label="device.deviceId"
-            :value="`RSSI ${device.rssi}`"
+            :value="getDeviceValue(device)"
             is-link
             @click="connect(device.deviceId)"
           />

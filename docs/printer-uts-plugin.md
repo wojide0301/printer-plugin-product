@@ -55,8 +55,37 @@ Status OK
 7. Tap `语义打印`, then tap `ESC打印`.
 8. Confirm the printer outputs the same receipt as Android.
 
+## Noryox NB55 Android QA
+
+1. Build a custom Android base after adding the AIDL files and manifest `<queries>` entry.
+2. Install the custom base on the Noryox NB55 device.
+3. Confirm the system printer service is present:
+
+```bash
+adb shell "pm list packages | toybox grep -Ei 'com.incar.printerservice|printer'"
+adb shell "service list | toybox grep -Ei 'printer|incar|nyx'"
+```
+
+4. Open `pages/printer/index`.
+5. Tap `扫描打印机`.
+6. Confirm the list shows `Noryox NB55 Built-in Printer` with value `内置`.
+7. Tap the built-in printer row.
+8. Tap `语义打印`.
+9. Confirm the printer outputs:
+
+```text
+YUNTU PRINTER
+Printer Plugin
+Time <current time>
+Status OK
+```
+
+10. Tap `ESC打印`.
+11. Confirm it prints the ESC/POS sample.
+
 ## Known Limits
 
-- First version supports BLE printers.
+- BLE scanning supports BLE printers only.
+- Noryox NB55 / Handheld_POS_V28 built-in printers use the system AIDL service `com.incar.printerservice`.
 - Android classic Bluetooth SPP printers need a separate transport implementation.
 - Non-ASCII text is encoded as `?` in the first pass; add GB18030/GBK encoding after validating target printer code page behavior on hardware.

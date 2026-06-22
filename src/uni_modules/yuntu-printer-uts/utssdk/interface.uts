@@ -1,12 +1,13 @@
 export type ConnectState = 'connectSuccess' | 'disconnect' | 'connectFail'
 export type EscJustification = 'left' | 'center' | 'right'
-export type PrinterConnectionType = 'bluetooth' | 'wifi'
+export type PrinterConnectionType = 'bluetooth' | 'wifi' | 'noryox'
 
 export type PrinterDevice = {
   deviceId: string
   name: string
   rssi: number
   serviceUUIDs: string[]
+  type?: PrinterConnectionType
 }
 
 export type PrinterConnection = {
@@ -118,6 +119,17 @@ export type GetConnectedPrinterOptions = {
   complete?: () => void
 }
 
+export type CheckBuiltInPrinterSuccess = {
+  available: boolean
+  device?: PrinterDevice
+}
+
+export type CheckBuiltInPrinterOptions = {
+  success?: (res: CheckBuiltInPrinterSuccess) => void
+  fail?: (err: PrinterError) => void
+  complete?: () => void
+}
+
 export type PrintEscOptions = {
   bytes: number[]
   chunkSize?: number
@@ -168,5 +180,6 @@ export type ConnectPrinter = (options: ConnectPrinterOptions) => void
 export type ConnectNet = (options: ConnectNetOptions) => void
 export type DisconnectPrinter = (options: DisconnectPrinterOptions) => void
 export type GetConnectedPrinter = (options: GetConnectedPrinterOptions) => void
+export type CheckBuiltInPrinter = (options: CheckBuiltInPrinterOptions) => void
 export type PrintEsc = (options: PrintEscOptions) => void
 export type PrintText = (options: PrintTextOptions) => void

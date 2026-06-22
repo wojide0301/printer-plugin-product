@@ -24,6 +24,18 @@ Android requires Bluetooth scan/connect permissions and location permission for 
 
 iOS requires `NSBluetoothAlwaysUsageDescription`. Wi-Fi printing may require `NSLocalNetworkUsageDescription`.
 
+## Noryox NB55 Built-In Printer
+
+On Noryox NB55 / Handheld_POS_V28 Android devices, the internal printer is not a Bluetooth peripheral. It is exposed through the system AIDL service:
+
+- package: `com.incar.printerservice`
+- action: `com.incar.printerservice.IPrinterService`
+- selected device id: `noryox:built-in`
+
+The Android implementation binds this service and sends existing ESC/POS bytes through `printEscposData(byte[])`.
+
+After adding or changing Android AIDL / manifest files, rebuild the custom Android base before testing on the device.
+
 ## Basic Usage
 
 ```ts
