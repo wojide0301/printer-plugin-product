@@ -15,7 +15,7 @@ export default defineUniPages({
     // 导航栏配置
     navigationBarBackgroundColor: '@navBgColor',
     navigationBarTextStyle: '@navTxtStyle',
-    navigationBarTitleText: 'Wot Starter',
+    navigationBarTitleText: '打印机插件',
 
     // 页面背景配置
     backgroundColor: '@bgColor',
@@ -44,10 +44,6 @@ export default defineUniPages({
     backgroundColor: '@tabBgColor',
     borderStyle: '@tabBorderStyle',
     list: [{
-      pagePath: 'pages/index/index',
-    }, {
-      pagePath: 'pages/about/index',
-    }, {
       pagePath: 'pages/printer/index',
     }],
   },

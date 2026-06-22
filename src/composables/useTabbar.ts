@@ -7,9 +7,7 @@ export interface TabbarItem {
 }
 
 const tabbarItems = ref<TabbarItem[]>([
-  { name: 'home', active: true, title: '首页', icon: 'home' },
-  { name: 'printer', active: false, title: '打印机', icon: 'printer' },
-  { name: 'about', active: false, title: '关于', icon: 'user' },
+  { name: 'printer', active: true, title: '打印机', icon: 'printer' },
 ])
 
 export function useTabbar() {

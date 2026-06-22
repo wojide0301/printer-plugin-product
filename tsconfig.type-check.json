@@ -5,12 +5,10 @@
       "@dcloudio/types",
       "@mini-types/alipay",
       "miniprogram-api-typings",
-      "@uni-helper/uni-types",
-      "uni-echarts/global"
+      "@uni-helper/uni-types"
     ]
   },
   "exclude": [
-    "src/uni_modules/mp-html/components/mp-html/node/node.vue",
     "src/components.d.ts"
   ]
 }
