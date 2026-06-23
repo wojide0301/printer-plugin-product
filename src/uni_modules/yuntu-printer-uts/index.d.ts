@@ -1,7 +1,12 @@
 declare module '@/uni_modules/yuntu-printer-uts' {
+  // ---- types ----
   export type ConnectState = 'connectSuccess' | 'disconnect' | 'connectFail'
   export type EscJustification = 'left' | 'center' | 'right'
   export type PrinterConnectionType = 'bluetooth' | 'wifi' | 'noryox'
+  export type BuiltInTextAlign = 'left' | 'center' | 'right'
+  export type BuiltInTextStyle = 'normal' | 'bold' | 'italic' | 'boldItalic'
+  export type BuiltInBarcodeSymbology = 'code128' | 'code39' | 'code93' | 'upcA' | 'upcE' | 'ean13' | 'ean8' | 'itf' | 'codabar'
+  export type BuiltInImageType = 'blackWhite' | 'grayscale'
 
   export interface PrinterDevice {
     deviceId: string
@@ -39,80 +44,8 @@ declare module '@/uni_modules/yuntu-printer-uts' {
     errMsg?: string
   }
 
-  export interface TwoColumnText {
-    left: string
-    right: string
-  }
-
-  export interface ThreeColumnText {
-    left: string
-    middle: string
-    right: string
-  }
-
-  export interface FourColumnText {
-    one: string
-    two: string
-    three: string
-    four: string
-  }
-
-  export interface EscQRCodeParam {
-    content: string
-    size: number
-  }
-
-  export interface EscImageParam {
-    base64Str: string
-  }
-
   export interface ScanPrintersSuccess {
     devices: PrinterDevice[]
-  }
-
-  export interface ScanPrintersOptions {
-    timeout?: number
-    serviceUUIDs?: string[]
-    success?: (res: ScanPrintersSuccess) => void
-    fail?: (err: PrinterError) => void
-    complete?: () => void
-  }
-
-  export interface StopScanPrintersOptions {
-    success?: () => void
-    fail?: (err: PrinterError) => void
-    complete?: () => void
-  }
-
-  export interface ConnectPrinterOptions {
-    deviceId: string
-    serviceUUIDs?: string[]
-    writeCharacteristicUUIDs?: string[]
-    timeout?: number
-    success?: (res: PrinterConnection) => void
-    fail?: (err: PrinterError) => void
-    complete?: () => void
-  }
-
-  export interface ConnectNetOptions {
-    ip: string
-    port: string | number
-    timeout?: number
-    success?: (res: PrinterConnection) => void
-    fail?: (err: PrinterError) => void
-    complete?: () => void
-  }
-
-  export interface DisconnectPrinterOptions {
-    success?: () => void
-    fail?: (err: PrinterError) => void
-    complete?: () => void
-  }
-
-  export interface GetConnectedPrinterOptions {
-    success?: (res: PrinterConnection) => void
-    fail?: (err: PrinterError) => void
-    complete?: () => void
   }
 
   export interface CheckBuiltInPrinterSuccess {
@@ -120,68 +53,164 @@ declare module '@/uni_modules/yuntu-printer-uts' {
     device?: PrinterDevice
   }
 
-  export interface CheckBuiltInPrinterOptions {
-    success?: (res: CheckBuiltInPrinterSuccess) => void
-    fail?: (err: PrinterError) => void
-    complete?: () => void
+  export interface BuiltInPrinterResult {
+    code: number
+    ok: boolean
+    message: string
   }
 
-  export interface PrintEscOptions {
-    bytes: number[]
-    chunkSize?: number
-    success?: () => void
-    fail?: (err: PrinterError) => void
-    complete?: () => void
+  export interface ScanPrintersSimpleOptions {
+    timeout?: number
+    serviceUUIDs?: string[]
   }
 
-  export interface PrintTextOptions {
+  export interface ConnectPrinterSimpleOptions {
+    deviceId: string
+    serviceUUIDs?: string[]
+    writeCharacteristicUUIDs?: string[]
+    timeout?: number
+  }
+
+  export interface ConnectWifiSimpleOptions {
+    ip: string
+    port: string | number
+    timeout?: number
+  }
+
+  export interface PrintTextSimpleOptions {
     title: string
     lines: string[]
     feed?: number
     cut?: boolean
     chunkSize?: number
-    success?: () => void
-    fail?: (err: PrinterError) => void
-    complete?: () => void
   }
 
-  export type BlueStateCallback = (on: boolean) => void
-  export type ConnectStateCallback = (payload: ConnectStatePayload) => void
-  export type DataReceiveCallback = (data: number[]) => void
-  export type WriteDataCallback = (info: WriteDataResult) => void
+  export interface PrintBuiltInTextOptions {
+    text: string
+    format?: BuiltInTextFormat
+    textWidth?: number
+    align?: BuiltInTextAlign
+    autoOut?: boolean
+  }
 
-  export const scanBlue: (callback: (device: PrinterDevice) => void) => void
-  export const stopScanBlue: () => void
-  export const connectBlue: (deviceId: string) => void
-  export const disconnect: () => void
-  export const isConnect: () => boolean
-  export const writeData: (callback: WriteDataCallback | null) => void
-  export const onBlueStateChange: (callback: BlueStateCallback) => void
-  export const onConnectStateChange: (callback: ConnectStateCallback) => void
-  export const onDataReceive: (callback: DataReceiveCallback) => void
-  export const clearCommandBuffer: () => void
-  export const escInitializePrinter: () => void
-  export const escJustification: (position: EscJustification) => void
-  export const escSetCharcterSize: (size: 1 | 2) => void
-  export const escTurnEmphasizedMode: (on: boolean) => void
-  export const escCutPaper: () => void
-  export const escNewLine: () => void
-  export const addPrintAndFeedLines: (lines: number) => void
-  export const escText: (text: string) => void
-  export const escTwoText58: (payload: TwoColumnText) => string
-  export const escThreeText58: (payload: ThreeColumnText) => string
-  export const escFourText58: (payload: FourColumnText) => string
-  export const escQRCode: (payload: EscQRCodeParam) => void
-  export const escImage: (payload: EscImageParam) => void
-  export const escStringCommand: (command: string) => void
-  export const escBytesCommand: (command: number[]) => void
-  export const scanPrinters: (options: ScanPrintersOptions) => void
-  export const stopScanPrinters: (options: StopScanPrintersOptions) => void
-  export const connectPrinter: (options: ConnectPrinterOptions) => void
-  export const connectNet: (options: ConnectNetOptions) => void
-  export const disconnectPrinter: (options: DisconnectPrinterOptions) => void
-  export const getConnectedPrinter: (options: GetConnectedPrinterOptions) => void
-  export const checkBuiltInPrinter: (options: CheckBuiltInPrinterOptions) => void
-  export const printEsc: (options: PrintEscOptions) => void
-  export const printText: (options: PrintTextOptions) => void
+  export interface PrintBuiltInBarcodeOptions {
+    content: string
+    width: number
+    height: number
+    textPosition?: number
+    align?: BuiltInTextAlign
+    symbology?: BuiltInBarcodeSymbology
+    autoOut?: boolean
+  }
+
+  export interface PrintBuiltInQrCodeOptions {
+    content: string
+    width: number
+    height: number
+    align?: BuiltInTextAlign
+    autoOut?: boolean
+  }
+
+  export interface PrintBuiltInImageOptions {
+    base64Str: string
+    type?: BuiltInImageType
+    align?: BuiltInTextAlign
+    autoOut?: boolean
+  }
+
+  export interface PrintBuiltInLabelOptions {
+    height: number
+    gap: number
+    autoLocate?: boolean
+    detectBeforeLocate?: boolean
+    actions: BuiltInLabelAction[]
+  }
+
+  export interface PrintBuiltInTableOptions {
+    rows: BuiltInTableRow[]
+    autoOut?: boolean
+  }
+
+  export interface BuiltInTextFormat {
+    textSize?: number
+    underline?: boolean
+    textScaleX?: number
+    textScaleY?: number
+    letterSpacing?: number
+    lineSpacing?: number
+    topPadding?: number
+    leftPadding?: number
+    align?: BuiltInTextAlign
+    style?: BuiltInTextStyle
+    font?: number
+    path?: string
+  }
+
+  export interface BuiltInTableRow {
+    texts: string[]
+    weights: number[]
+    formats?: BuiltInTextFormat[]
+  }
+
+  export type BuiltInLabelAction = {
+    type: string
+    text?: string
+    format?: BuiltInTextFormat
+    content?: string
+    width?: number
+    height?: number
+    textPosition?: number
+    align?: BuiltInTextAlign
+    symbology?: BuiltInBarcodeSymbology
+  }
+
+  // ---- classes ----
+
+  export class EscBuilder {
+    clearCommandBuffer(): void
+    escInitializePrinter(): void
+    escJustification(position: EscJustification): void
+    escSetCharcterSize(size: 1 | 2): void
+    escTurnEmphasizedMode(on: boolean): void
+    escCutPaper(): void
+    escNewLine(): void
+    addPrintAndFeedLines(lines: number): void
+    escText(text: string): void
+    escQRCode(payload: EscQRCodeParam): void
+    escStringCommand(command: string): void
+    escBytesCommand(command: number[]): void
+  }
+
+  export class BuiltInPrinter {
+    printText(text: string, format?: BuiltInTextFormat, textWidth?: number, align?: BuiltInTextAlign, autoOut?: boolean): Promise<BuiltInPrinterResult>
+    printBarcode(content: string, width: number, height: number, textPosition?: number, align?: BuiltInTextAlign, symbology?: BuiltInBarcodeSymbology, autoOut?: boolean): Promise<BuiltInPrinterResult>
+    printQrCode(content: string, width: number, height: number, align?: BuiltInTextAlign, autoOut?: boolean): Promise<BuiltInPrinterResult>
+    printImage(base64Str: string, type?: BuiltInImageType, align?: BuiltInTextAlign, autoOut?: boolean): Promise<BuiltInPrinterResult>
+    printLabel(height: number, gap: number, actions: BuiltInLabelAction[], autoLocate?: boolean, detectBeforeLocate?: boolean): Promise<BuiltInPrinterResult>
+    printTable(rows: BuiltInTableRow[], autoOut?: boolean): Promise<boolean>
+    clearLabelLearning(): Promise<BuiltInPrinterResult>
+  }
+
+  // ---- functions ----
+
+  export function createEscBuilder(): EscBuilder
+  export function sendEsc(builder: EscBuilder): Promise<WriteDataResult>
+  export function getBuiltInPrinter(): BuiltInPrinter | null
+
+  export function scanPrinters(options?: ScanPrintersSimpleOptions): Promise<ScanPrintersSuccess>
+  export function stopScanPrinters(): void
+  export function connectPrinter(options: ConnectPrinterSimpleOptions): Promise<PrinterConnection>
+  export function connectWifi(options: ConnectWifiSimpleOptions): Promise<PrinterConnection>
+  export function disconnectPrinter(): Promise<boolean>
+  export function getConnectedPrinter(): PrinterConnection | null
+  export function checkBuiltInPrinter(): Promise<CheckBuiltInPrinterSuccess>
+  export function printText(options: PrintTextSimpleOptions): Promise<WriteDataResult>
+  export function printEsc(bytes: number[], chunkSize?: number): Promise<WriteDataResult>
+  export function printBuiltInText(options: PrintBuiltInTextOptions): Promise<BuiltInPrinterResult>
+  export function printBuiltInBarcode(options: PrintBuiltInBarcodeOptions): Promise<BuiltInPrinterResult>
+  export function printBuiltInQrCode(options: PrintBuiltInQrCodeOptions): Promise<BuiltInPrinterResult>
+  export function printBuiltInImage(options: PrintBuiltInImageOptions): Promise<BuiltInPrinterResult>
+  export function printBuiltInLabel(options: PrintBuiltInLabelOptions): Promise<BuiltInPrinterResult>
+  export function printBuiltInTable(options: PrintBuiltInTableOptions): Promise<boolean>
+  export function onConnectStateChange(callback: (payload: ConnectStatePayload) => void): void
 }

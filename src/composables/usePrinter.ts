@@ -1,22 +1,17 @@
-import { requestAndroidPermission } from '@/uni_modules/x-perm-apply-instr-v2/js_sdk/index.js'
 import type { PrinterDevice, PrinterError } from '@/uni_modules/yuntu-printer-uts'
+import { requestAndroidPermission } from '@/uni_modules/x-perm-apply-instr-v2/js_sdk/index.js'
 import {
-  addPrintAndFeedLines,
   checkBuiltInPrinter,
-  clearCommandBuffer,
-  connectNet,
   connectPrinter,
+  connectWifi,
+  createEscBuilder,
   disconnectPrinter,
-  escCutPaper,
-  escInitializePrinter,
-  escNewLine,
-  escText,
+  sendEsc,
   getConnectedPrinter,
   onConnectStateChange,
   printText,
   scanPrinters,
   stopScanPrinters,
-  writeData,
 } from '@/uni_modules/yuntu-printer-uts'
 
 export type PrinterConnectionType = 'bluetooth' | 'wifi' | 'noryox'
@@ -104,23 +99,34 @@ export function usePrinter() {
     })
   }
 
-  function detectBuiltInPrinter() {
-    return new Promise<PrinterDeviceView | null>((resolve) => {
-      const systemInfo = uni.getSystemInfoSync()
-      if (systemInfo.uniPlatform !== 'app' || systemInfo.platform !== 'android') {
-        resolve(null)
-        return
-      }
+  async function scanBuiltIn() {
+    connectionType.value = 'noryox'
+    loading.value = true
+    devices.value = []
 
-      checkBuiltInPrinter({
-        success(res) {
-          resolve(res.available && res.device ? res.device : null)
-        },
-        fail() {
-          resolve(null)
-        },
-      })
-    })
+    const systemInfo = uni.getSystemInfoSync()
+    if (systemInfo.uniPlatform !== 'app' || systemInfo.platform !== 'android') {
+      showError({ errMsg: '内置打印机仅支持 Android' })
+      loading.value = false
+      return
+    }
+
+    try {
+      const res = await checkBuiltInPrinter()
+      if (res.available && res.device) {
+        devices.value = [res.device]
+        lastEvent.value = '发现内置打印机'
+      }
+      else {
+        lastEvent.value = '未检测到内置打印机'
+      }
+    }
+    catch (err) {
+      showError(err as PrinterError)
+    }
+    finally {
+      loading.value = false
+    }
   }
 
   async function scan() {
@@ -128,62 +134,47 @@ export function usePrinter() {
     loading.value = true
     devices.value = []
 
-    const builtInPrinter = await detectBuiltInPrinter()
-    if (builtInPrinter) {
-      devices.value = [builtInPrinter]
-      connectionType.value = 'noryox'
-      lastEvent.value = '发现内置打印机'
-      loading.value = false
-      return
-    }
-
     const hasPermission = await ensureBluetoothPermission()
     if (!hasPermission) {
       loading.value = false
       return
     }
 
-    scanPrinters({
-      timeout: 10000,
-      success(res) {
-        devices.value = res.devices
-      },
-      fail: showError,
-      complete() {
-        loading.value = false
-      },
-    })
+    try {
+      const res = await scanPrinters({ timeout: 10000 })
+      devices.value = res.devices
+    }
+    catch (err) {
+      showError(err as PrinterError)
+    }
+    finally {
+      loading.value = false
+    }
   }
 
   function stopScan() {
-    stopScanPrinters({
-      complete() {
-        loading.value = false
-      },
-    })
+    stopScanPrinters()
+    loading.value = false
   }
 
-  function connect(deviceId: string) {
+  async function connect(deviceId: string) {
     loading.value = true
-    connectPrinter({
-      deviceId,
-      success(res) {
-        connectedDeviceId.value = res.deviceId
-        connectionType.value = res.type ?? 'bluetooth'
-        lastEvent.value = 'connectSuccess'
-        uni.showToast({
-          title: '连接成功',
-          icon: 'success',
-        })
-      },
-      fail: showError,
-      complete() {
-        loading.value = false
-      },
-    })
+    try {
+      const res = await connectPrinter({ deviceId })
+      connectedDeviceId.value = res.deviceId
+      connectionType.value = res.type ?? 'bluetooth'
+      lastEvent.value = 'connectSuccess'
+      uni.showToast({ title: '连接成功', icon: 'success' })
+    }
+    catch (err) {
+      showError(err as PrinterError)
+    }
+    finally {
+      loading.value = false
+    }
   }
 
-  function connectWifi() {
+  async function connectWifiHandler() {
     if (!wifiIp.value || !wifiPort.value) {
       showError({ errMsg: '请输入 Wi-Fi 打印机 IP 和端口' })
       return
@@ -191,61 +182,53 @@ export function usePrinter() {
 
     connectionType.value = 'wifi'
     loading.value = true
-    connectNet({
-      ip: wifiIp.value,
-      port: wifiPort.value,
-      success(res) {
-        connectedDeviceId.value = res.deviceId
-        connectionType.value = 'wifi'
-        lastEvent.value = 'connectSuccess'
-        uni.showToast({
-          title: '连接成功',
-          icon: 'success',
-        })
-      },
-      fail: showError,
-      complete() {
-        loading.value = false
-      },
-    })
+    try {
+      const res = await connectWifi({ ip: wifiIp.value, port: wifiPort.value })
+      connectedDeviceId.value = res.deviceId
+      connectionType.value = 'wifi'
+      lastEvent.value = 'connectSuccess'
+      uni.showToast({ title: '连接成功', icon: 'success' })
+    }
+    catch (err) {
+      showError(err as PrinterError)
+    }
+    finally {
+      loading.value = false
+    }
   }
 
   function refreshConnected() {
-    getConnectedPrinter({
-      success(res) {
-        connectedDeviceId.value = res.deviceId
-        if (res.type === 'wifi') {
-          connectionType.value = 'wifi'
-          wifiIp.value = res.ip ?? wifiIp.value
-          wifiPort.value = String(res.port ?? wifiPort.value)
-        }
-        else if (res.type === 'noryox') {
-          connectionType.value = 'noryox'
-        }
-        else if (res.deviceId) {
-          connectionType.value = 'bluetooth'
-        }
-      },
-      fail: showError,
-    })
+    const conn = getConnectedPrinter()
+    if (conn) {
+      connectedDeviceId.value = conn.deviceId
+      if (conn.type === 'wifi') {
+        connectionType.value = 'wifi'
+        wifiIp.value = conn.ip ?? wifiIp.value
+        wifiPort.value = String(conn.port ?? wifiPort.value)
+      }
+      else if (conn.type === 'noryox') {
+        connectionType.value = 'noryox'
+      }
+      else if (conn.deviceId) {
+        connectionType.value = 'bluetooth'
+      }
+    }
   }
 
-  function disconnect() {
+  async function disconnect() {
     loading.value = true
-    disconnectPrinter({
-      success() {
-        connectedDeviceId.value = ''
-        lastEvent.value = 'disconnect'
-        uni.showToast({
-          title: '已断开',
-          icon: 'success',
-        })
-      },
-      fail: showError,
-      complete() {
-        loading.value = false
-      },
-    })
+    try {
+      await disconnectPrinter()
+      connectedDeviceId.value = ''
+      lastEvent.value = 'disconnect'
+      uni.showToast({ title: '已断开', icon: 'success' })
+    }
+    catch (err) {
+      showError(err as PrinterError)
+    }
+    finally {
+      loading.value = false
+    }
   }
 
   function bindEvents() {
@@ -263,47 +246,50 @@ export function usePrinter() {
     })
   }
 
-  function printSample() {
+  async function printSample() {
     loading.value = true
-    printText({
-      title: 'YUNTU PRINTER',
-      lines: [
-        'Printer Plugin',
-        `Time ${new Date().toLocaleString()}`,
-        'Status OK',
-      ],
-      feed: 3,
-      cut: true,
-      success() {
-        uni.showToast({
-          title: '已发送打印',
-          icon: 'success',
-        })
-      },
-      fail: showError,
-      complete() {
-        loading.value = false
-      },
-    })
+    try {
+      await printText({
+        title: 'YUNTU PRINTER',
+        lines: [
+          'Printer Plugin',
+          `Time ${new Date().toLocaleString()}`,
+          'Status OK',
+        ],
+        feed: 3,
+        cut: true,
+      })
+      uni.showToast({ title: '已发送打印', icon: 'success' })
+    }
+    catch (err) {
+      showError(err as PrinterError)
+    }
+    finally {
+      loading.value = false
+    }
   }
 
-  function printSampleByEscCommands() {
+  async function printSampleByEscCommands() {
     loading.value = true
-    clearCommandBuffer()
-    escInitializePrinter()
-    escText('YUNTU PRINTER')
-    escNewLine()
-    escText('GPrinter Compatible API')
-    escNewLine()
-    addPrintAndFeedLines(3)
-    escCutPaper()
-    writeData(() => {
+    try {
+      const esc = createEscBuilder()
+      esc.clearCommandBuffer()
+      esc.escInitializePrinter()
+      esc.escText('YUNTU PRINTER')
+      esc.escNewLine()
+      esc.escText('Fluent ESC/POS API')
+      esc.escNewLine()
+      esc.addPrintAndFeedLines(3)
+      esc.escCutPaper()
+      await sendEsc(esc)
+      uni.showToast({ title: '已发送打印', icon: 'success' })
+    }
+    catch (err) {
+      showError(err as PrinterError)
+    }
+    finally {
       loading.value = false
-      uni.showToast({
-        title: '已发送打印',
-        icon: 'success',
-      })
-    })
+    }
   }
 
   return {
@@ -311,7 +297,7 @@ export function usePrinter() {
     connectionType,
     connectedDeviceId,
     connect,
-    connectWifi,
+    connectWifi: connectWifiHandler,
     devices,
     disconnect,
     isConnected,
@@ -321,6 +307,7 @@ export function usePrinter() {
     printSampleByEscCommands,
     refreshConnected,
     scan,
+    scanBuiltIn,
     statusText,
     stopScan,
     wifiIp,

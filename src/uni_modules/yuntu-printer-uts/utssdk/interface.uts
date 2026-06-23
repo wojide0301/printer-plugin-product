@@ -1,6 +1,10 @@
 export type ConnectState = 'connectSuccess' | 'disconnect' | 'connectFail'
 export type EscJustification = 'left' | 'center' | 'right'
 export type PrinterConnectionType = 'bluetooth' | 'wifi' | 'noryox'
+export type BuiltInTextAlign = 'left' | 'center' | 'right'
+export type BuiltInTextStyle = 'normal' | 'bold' | 'italic' | 'boldItalic'
+export type BuiltInBarcodeSymbology = 'code128' | 'code39' | 'code93' | 'upcA' | 'upcE' | 'ean13' | 'ean8' | 'itf' | 'codabar'
+export type BuiltInImageType = 'blackWhite' | 'grayscale'
 
 export type PrinterDevice = {
   deviceId: string
@@ -38,148 +42,65 @@ export type ConnectStatePayload = {
   errMsg?: string
 }
 
+export type EscQRCodeParam = { content: string, size: number }
+export type TwoColumnText = { left: string, right: string }
+export type ThreeColumnText = { left: string, middle: string, right: string }
+export type FourColumnText = { one: string, two: string, three: string, four: string }
 export type BlueStateCallback = (on: boolean) => void
 export type ConnectStateCallback = (payload: ConnectStatePayload) => void
+
+export type ScanPrintersSuccess = { devices: PrinterDevice[] }
+export type CheckBuiltInPrinterSuccess = { available: boolean, device?: PrinterDevice }
+export type BuiltInPrinterResult = { code: Int, ok: boolean, message: string }
+
+export type ScanPrintersSimpleOptions = { timeout?: number, serviceUUIDs?: string[] }
+export type ConnectPrinterSimpleOptions = { deviceId: string, serviceUUIDs?: string[], writeCharacteristicUUIDs?: string[], timeout?: number }
+export type ConnectWifiSimpleOptions = { ip: string, port: string | number, timeout?: number }
+export type PrintTextSimpleOptions = { title: string, lines: string[], feed?: number, cut?: boolean, chunkSize?: number }
+
+export type BuiltInTextFormat = {
+  textSize?: Int, underline?: boolean, textScaleX?: Double, textScaleY?: Double
+  letterSpacing?: Double, lineSpacing?: Double, topPadding?: Int, leftPadding?: Int
+  align?: BuiltInTextAlign, style?: BuiltInTextStyle, font?: Int, path?: string
+}
+
+// ---- internal types (used by platform implementations) ----
+
 export type DataReceiveCallback = (data: number[]) => void
-export type WriteDataCallback = (info: WriteDataResult) => void
 
-export type TwoColumnText = {
-  left: string
-  right: string
-}
+export type ScanPrintersOptions = { timeout?: number, serviceUUIDs?: string[], success?: (res: ScanPrintersSuccess) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type ConnectPrinterOptions = { deviceId: string, serviceUUIDs?: string[], writeCharacteristicUUIDs?: string[], timeout?: number, success?: (res: PrinterConnection) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type ConnectNetOptions = { ip: string, port: string | number, timeout?: number, success?: (res: PrinterConnection) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type DisconnectPrinterOptions = { success?: () => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type CheckBuiltInPrinterOptions = { success?: (res: CheckBuiltInPrinterSuccess) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintEscOptions = { bytes: number[], chunkSize?: number, success?: () => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintTextOptions = { title: string, lines: string[], feed?: number, cut?: boolean, chunkSize?: number, success?: () => void, fail?: (err: PrinterError) => void, complete?: () => void }
 
-export type ThreeColumnText = {
-  left: string
-  middle: string
-  right: string
-}
+export type PrintBuiltInTextOptions = { text: string, format?: BuiltInTextFormat, textWidth?: Int, align?: BuiltInTextAlign, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintBuiltInBarcodeOptions = { content: string, width: Int, height: Int, textPosition?: Int, align?: BuiltInTextAlign, symbology?: BuiltInBarcodeSymbology, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintBuiltInQrCodeOptions = { content: string, width: Int, height: Int, align?: BuiltInTextAlign, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintBuiltInImageOptions = { base64Str: string, type?: BuiltInImageType, align?: BuiltInTextAlign, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintBuiltInTableTextOptions = UTSJSONObject
+export type PrintBuiltInLabelOptions = UTSJSONObject
 
-export type FourColumnText = {
-  one: string
-  two: string
-  three: string
-  four: string
-}
+// ---- public API signatures ----
 
-export type EscQRCodeParam = {
-  content: string
-  size: number
-}
-
-export type EscImageParam = {
-  base64Str: string
-}
-
-export type ScanPrintersSuccess = {
-  devices: PrinterDevice[]
-}
-
-export type ScanPrintersOptions = {
-  timeout?: number
-  serviceUUIDs?: string[]
-  success?: (res: ScanPrintersSuccess) => void
-  fail?: (err: PrinterError) => void
-  complete?: () => void
-}
-
-export type StopScanPrintersOptions = {
-  success?: () => void
-  fail?: (err: PrinterError) => void
-  complete?: () => void
-}
-
-export type ConnectPrinterOptions = {
-  deviceId: string
-  serviceUUIDs?: string[]
-  writeCharacteristicUUIDs?: string[]
-  timeout?: number
-  success?: (res: PrinterConnection) => void
-  fail?: (err: PrinterError) => void
-  complete?: () => void
-}
-
-export type ConnectNetOptions = {
-  ip: string
-  port: string | number
-  timeout?: number
-  success?: (res: PrinterConnection) => void
-  fail?: (err: PrinterError) => void
-  complete?: () => void
-}
-
-export type DisconnectPrinterOptions = {
-  success?: () => void
-  fail?: (err: PrinterError) => void
-  complete?: () => void
-}
-
-export type GetConnectedPrinterOptions = {
-  success?: (res: PrinterConnection) => void
-  fail?: (err: PrinterError) => void
-  complete?: () => void
-}
-
-export type CheckBuiltInPrinterSuccess = {
-  available: boolean
-  device?: PrinterDevice
-}
-
-export type CheckBuiltInPrinterOptions = {
-  success?: (res: CheckBuiltInPrinterSuccess) => void
-  fail?: (err: PrinterError) => void
-  complete?: () => void
-}
-
-export type PrintEscOptions = {
-  bytes: number[]
-  chunkSize?: number
-  success?: () => void
-  fail?: (err: PrinterError) => void
-  complete?: () => void
-}
-
-export type PrintTextOptions = {
-  title: string
-  lines: string[]
-  feed?: number
-  cut?: boolean
-  chunkSize?: number
-  success?: () => void
-  fail?: (err: PrinterError) => void
-  complete?: () => void
-}
-
-export type ScanBlue = (callback: (device: PrinterDevice) => void) => void
-export type StopScanBlue = () => void
-export type ConnectBlue = (deviceId: string) => void
-export type Disconnect = () => void
-export type IsConnect = () => boolean
-export type WriteData = (callback: WriteDataCallback | null) => void
-export type OnBlueStateChange = (callback: BlueStateCallback) => void
+export type CreateEscBuilder = () => any
+export type SendEsc = (builder: any) => Promise<WriteDataResult>
+export type GetBuiltInPrinter = () => any
+export type ScanPrinters = (options?: ScanPrintersSimpleOptions) => Promise<ScanPrintersSuccess>
+export type StopScanPrinters = () => void
+export type ConnectPrinter = (options: ConnectPrinterSimpleOptions) => Promise<PrinterConnection>
+export type ConnectWifi = (options: ConnectWifiSimpleOptions) => Promise<PrinterConnection>
+export type DisconnectPrinter = () => Promise<boolean>
+export type GetConnectedPrinter = () => PrinterConnection | null
+export type CheckBuiltInPrinter = () => Promise<CheckBuiltInPrinterSuccess>
+export type PrintText = (options: PrintTextSimpleOptions) => Promise<WriteDataResult>
+export type PrintEsc = (bytes: number[], chunkSize?: number) => Promise<WriteDataResult>
+export type PrintBuiltInText = (options: PrintBuiltInTextOptions) => Promise<BuiltInPrinterResult>
+export type PrintBuiltInBarcode = (options: PrintBuiltInBarcodeOptions) => Promise<BuiltInPrinterResult>
+export type PrintBuiltInQrCode = (options: PrintBuiltInQrCodeOptions) => Promise<BuiltInPrinterResult>
+export type PrintBuiltInImage = (options: PrintBuiltInImageOptions) => Promise<BuiltInPrinterResult>
+export type PrintBuiltInLabel = (options: PrintBuiltInLabelOptions) => Promise<BuiltInPrinterResult>
+export type PrintBuiltInTable = (options: PrintBuiltInTableTextOptions) => Promise<boolean>
 export type OnConnectStateChange = (callback: ConnectStateCallback) => void
-export type OnDataReceive = (callback: DataReceiveCallback) => void
-export type ClearCommandBuffer = () => void
-export type EscInitializePrinter = () => void
-export type EscJustificationCommand = (position: EscJustification) => void
-export type EscSetCharcterSize = (size: 1 | 2) => void
-export type EscTurnEmphasizedMode = (on: boolean) => void
-export type EscCutPaper = () => void
-export type EscNewLine = () => void
-export type AddPrintAndFeedLines = (lines: number) => void
-export type EscText = (text: string) => void
-export type EscTwoText58 = (payload: TwoColumnText) => string
-export type EscThreeText58 = (payload: ThreeColumnText) => string
-export type EscFourText58 = (payload: FourColumnText) => string
-export type EscQRCode = (payload: EscQRCodeParam) => void
-export type EscImage = (payload: EscImageParam) => void
-export type EscStringCommand = (command: string) => void
-export type EscBytesCommand = (command: number[]) => void
-export type ScanPrinters = (options: ScanPrintersOptions) => void
-export type StopScanPrinters = (options: StopScanPrintersOptions) => void
-export type ConnectPrinter = (options: ConnectPrinterOptions) => void
-export type ConnectNet = (options: ConnectNetOptions) => void
-export type DisconnectPrinter = (options: DisconnectPrinterOptions) => void
-export type GetConnectedPrinter = (options: GetConnectedPrinterOptions) => void
-export type CheckBuiltInPrinter = (options: CheckBuiltInPrinterOptions) => void
-export type PrintEsc = (options: PrintEscOptions) => void
-export type PrintText = (options: PrintTextOptions) => void

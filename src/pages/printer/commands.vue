@@ -1,23 +1,17 @@
 <script setup lang="ts">
 import {
-  addPrintAndFeedLines,
-  clearCommandBuffer,
-  escBytesCommand,
-  escCutPaper,
-  escInitializePrinter,
-  escJustification,
-  escNewLine,
-  escQRCode,
-  escSetCharcterSize,
-  escStringCommand,
-  escText,
-  escTurnEmphasizedMode,
+  getBuiltInPrinter,
   getConnectedPrinter,
+  printBuiltInBarcode,
+  printBuiltInImage,
+  printBuiltInLabel,
+  printBuiltInTable,
+  printBuiltInText,
   printEsc,
   printText,
-  writeData,
 } from '@/uni_modules/yuntu-printer-uts'
-import { printerCommandTests } from '@/utils/printerCommandTests'
+import { getPrinterErrorMessage } from '@/utils/printerErrors'
+import { isBuiltInPrinterCommand, printerCommandTests } from '@/utils/printerCommandTests'
 
 definePage({
   name: 'printerCommands',
@@ -49,22 +43,18 @@ function showError(message: string) {
 }
 
 function refreshConnected() {
-  getConnectedPrinter({
-    success(res) {
-      connectedDeviceId.value = res.deviceId
-      connectionType.value = res.type ?? ''
-    },
-    fail(err) {
-      showError(err.errMsg ?? '获取连接状态失败')
-    },
-  })
+  const conn = getConnectedPrinter()
+  if (conn) {
+    connectedDeviceId.value = conn.deviceId
+    connectionType.value = conn.type ?? ''
+  }
 }
 
 function backToConnect() {
   router.back()
 }
 
-function runCommand(commandId: string, options: { batch?: boolean } = {}) {
+async function runCommand(commandId: string, options: { batch?: boolean } = {}) {
   if (!isConnected.value) {
     showError('请先连接打印机')
     return Promise.resolve(false)
@@ -80,73 +70,33 @@ function runCommand(commandId: string, options: { batch?: boolean } = {}) {
   runningId.value = options.batch ? 'all' : command.id
   lastResult.value = `正在发送：${command.title}`
 
-  return new Promise<boolean>((resolve) => {
-    const done = (message: string, ok = true) => {
-      loading.value = false
-      runningId.value = ''
-      lastResult.value = message
-      resolve(ok)
-    }
-
-    command.run({
-      addPrintAndFeedLines,
-      clearCommandBuffer,
-      escBytesCommand,
-      escCutPaper,
-      escInitializePrinter,
-      escJustification,
-      escNewLine,
-      escQRCode,
-      escSetCharcterSize,
-      escStringCommand,
-      escText,
-      escTurnEmphasizedMode,
-      printText(options) {
-        printText({
-          ...options,
-          success() {
-            done(`${command.title} 已发送`)
-          },
-          fail(err) {
-            done(err.errMsg ?? `${command.title} 发送失败`, false)
-            uni.showToast({
-              title: err.errMsg ?? '发送失败',
-              icon: 'none',
-            })
-          },
-        })
-      },
-      printEsc(options) {
-        printEsc({
-          ...options,
-          success() {
-            done(`${command.title} 已发送`)
-          },
-          fail(err) {
-            done(err.errMsg ?? `${command.title} 发送失败`, false)
-            uni.showToast({
-              title: err.errMsg ?? '发送失败',
-              icon: 'none',
-            })
-          },
-        })
-      },
-      writeData(callback) {
-        writeData((info) => {
-          callback?.(info)
-          if (info.complete === false) {
-            done(info.msg ?? `${command.title} 发送失败`, false)
-            uni.showToast({
-              title: info.msg ?? '发送失败',
-              icon: 'none',
-            })
-            return
-          }
-          done(`${command.title} 已发送`)
-        })
-      },
+  try {
+    const builtIn = getBuiltInPrinter()
+    await command.run({
+      esc: null,
+      builtIn,
+      sendEsc: async () => {},
+      printText: async (opts: any) => { await printText(opts) },
+      printEsc: async (bytes: number[], chunkSize?: number) => { await printEsc(bytes, chunkSize) },
+      printBuiltInText,
+      printBuiltInBarcode,
+      printBuiltInImage,
+      printBuiltInLabel,
+      printBuiltInTable,
     })
-  })
+    loading.value = false
+    runningId.value = ''
+    lastResult.value = `${command.title} 已发送`
+    return true
+  }
+  catch (err: any) {
+    loading.value = false
+    runningId.value = ''
+    const message = getPrinterErrorMessage(err, `${command.title} 发送失败`)
+    lastResult.value = message
+    uni.showToast({ title: message, icon: 'none' })
+    return false
+  }
 }
 
 async function runAllCommands() {
@@ -155,7 +105,11 @@ async function runAllCommands() {
     return
   }
 
-  for (const command of printerCommandTests) {
+  const commands = connectionType.value === 'noryox'
+    ? printerCommandTests.filter(isBuiltInPrinterCommand)
+    : printerCommandTests.filter(command => !isBuiltInPrinterCommand(command))
+
+  for (const command of commands) {
     const ok = await runCommand(command.id, { batch: true })
     if (!ok) {
       return

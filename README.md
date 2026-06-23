@@ -2,30 +2,29 @@
 
 Android / iOS 蓝牙与 Wi-Fi 打印机 UTS 插件与 uni-app 验证工程。
 
-本项目基于 Wot Starter 扩展，用于开发、调试和验证 `yuntu-printer-uts` 原生打印插件。插件面向 App 端热敏打印机，支持 BLE 蓝牙连接和 Wi-Fi/以太网 TCP 连接，提供设备扫描、连接、断开、ESC/POS 指令构建、原始字节写入和文本小票打印能力。
+本项目用于开发、调试和验证 `yuntu-printer-uts` 原生打印插件。插件面向 App 端热敏打印机，支持 BLE 蓝牙、Wi-Fi/TCP 以及 Noryox 内置打印机，提供流式 ESC/POS 指令构建、语义化小票打印和 Promise 风格异步 API。
 
 ## 功能特性
 
 - 扫描附近 BLE 打印机设备
-- 通过 `deviceId` 连接打印机
+- 通过 `deviceId` 连接 BLE 打印机
 - 通过 IP + 端口连接 Wi-Fi/以太网打印机
-- 断开连接并查询当前连接设备
-- 构建 GPrinter 兼容风格的 ESC/POS 指令
-- 写入原始 ESC/POS 字节数据
-- 通过语义化接口打印文本小票
-- 提供 Android / iOS 真机验证页面
-- 集成 Wot UI、Pinia、UnoCSS、Alova、Uni ECharts 等 uni-app 工程能力
+- Noryox NB55 内置打印机支持（Android）
+- 流式 ESC/POS 命令构建器（`createEscBuilder()`）
+- 语义化小票打印（`printText()`）
+- 直接发送原始 ESC/POS 字节（`printEsc()`）
+- 连接状态事件监听
+- 完整的命令测试页面（17 个测试用例覆盖所有 API）
+- 集成 Wot UI、Pinia、UnoCSS 等 uni-app 工程能力
 
 ## 平台支持
 
 | 平台 | 状态 | 说明 |
 | --- | --- | --- |
-| Android App | 支持 | 通过 Android Bluetooth API 实现 BLE 扫描、连接和写入；通过 TCP Socket 连接 Wi-Fi 打印机 |
-| iOS App | 支持 | 通过 CoreBluetooth 实现 BLE 扫描、连接和写入；通过 TCP Stream 连接 Wi-Fi 打印机 |
-| H5 | 不支持插件能力 | H5 可用于页面开发，不能调用原生 UTS 打印能力 |
+| Android App | 支持 | BLE 蓝牙、Wi-Fi TCP Socket、Noryox AIDL 内置打印机 |
+| iOS App | 支持 | BLE CoreBluetooth、Wi-Fi TCP Stream |
+| H5 | 不支持插件能力 | 可用于页面开发，不能调用原生 UTS 打印能力 |
 | 小程序 | 不支持插件能力 | 当前插件面向 App 原生运行时 |
-
-> 原生蓝牙和 TCP 打印能力需要编译进 App 运行时，Android 和 iOS 调试请使用自定义基座。
 
 ## 环境要求
 
@@ -33,7 +32,7 @@ Android / iOS 蓝牙与 Wi-Fi 打印机 UTS 插件与 uni-app 验证工程。
 - pnpm `9.9.0`
 - HBuilderX / uni-app App 真机调试环境
 - Android 或 iOS 真机
-- 支持 BLE 或 Wi-Fi/以太网 TCP 的 ESC/POS 打印机
+- 支持 BLE 或 Wi-Fi 的 ESC/POS 打印机
 
 ## 快速开始
 
@@ -47,28 +46,11 @@ H5 开发预览：
 pnpm dev:h5
 ```
 
-Android App 开发：
+Android / iOS App 开发：
 
 ```bash
 pnpm dev:app-android
-```
-
-iOS App 开发：
-
-```bash
 pnpm dev:app-ios
-```
-
-构建 H5：
-
-```bash
-pnpm build:h5
-```
-
-构建 App：
-
-```bash
-pnpm build:app
 ```
 
 ## 打印插件使用示例
@@ -78,100 +60,113 @@ pnpm build:app
 ```ts
 import {
   connectPrinter,
+  createEscBuilder,
   disconnectPrinter,
+  onConnectStateChange,
+  sendEsc,
   printText,
   scanPrinters,
   stopScanPrinters,
 } from '@/uni_modules/yuntu-printer-uts'
 
-scanPrinters({
-  timeout: 10000,
-  success(res) {
-    console.log(res.devices)
-  },
-  fail(err) {
-    console.error(err)
-  },
+// 扫描
+const { devices } = await scanPrinters({ timeout: 10000 })
+
+// 监听连接状态
+onConnectStateChange(({ state, deviceId, errMsg }) => {
+  console.log(state, deviceId)
 })
 
-connectPrinter({
-  deviceId: 'printer-device-id',
-  success() {
-    printText({
-      title: 'YUNTU PRINTER',
-      lines: ['Printer Plugin', 'Status OK'],
-      feed: 3,
-      cut: true,
-    })
-  },
+// 连接
+await connectPrinter({ deviceId: devices[0].deviceId })
+
+// 语义化打印
+await printText({
+  title: 'YUNTU PRINTER',
+  lines: ['Printer Plugin', 'Status OK'],
+  feed: 3,
+  cut: true,
 })
 
-disconnectPrinter({})
+// 流式 ESC/POS 命令
+const esc = createEscBuilder()
+esc.clearCommandBuffer()
+esc.escInitializePrinter()
+esc.escJustification('center')
+esc.escText('YUNTU PRINTER')
+esc.escNewLine()
+esc.escJustification('left')
+esc.escText('Item 10.00')
+esc.escNewLine()
+esc.addPrintAndFeedLines(3)
+esc.escCutPaper()
+await sendEsc(esc)
+
+// 断开
+await disconnectPrinter()
 stopScanPrinters()
 ```
 
-### Wi-Fi / 以太网打印
+### Wi-Fi 打印
+
+```ts
+import { connectWifi, disconnectPrinter, printText } from '@/uni_modules/yuntu-printer-uts'
+
+await connectWifi({ ip: '192.168.100.110', port: 8000 })
+await printText({ title: 'Wi-Fi Printer', lines: ['TCP Print OK'], feed: 3, cut: true })
+await disconnectPrinter()
+```
+
+### Noryox 内置打印机
 
 ```ts
 import {
-  connectNet,
-  disconnect,
-  escInitializePrinter,
-  escNewLine,
-  escText,
-  isConnect,
-  writeData,
+  checkBuiltInPrinter,
+  connectPrinter,
+  printBuiltInBarcode,
+  printBuiltInText,
 } from '@/uni_modules/yuntu-printer-uts'
 
-connectNet({
-  ip: '192.168.100.110',
-  port: '8000',
-  success(res) {
-    console.log('connected', res.deviceId)
-  },
-  fail(err) {
-    console.error(err)
-  },
-})
-
-console.log('connected:', isConnect())
-
-escInitializePrinter()
-escText('YUNTU PRINTER')
-escNewLine()
-escText('Wi-Fi Print OK')
-writeData((info) => {
-  console.log(`writeData complete: ${info.complete}, msg: ${info.msg}`)
-})
-
-disconnect()
+const { available, device } = await checkBuiltInPrinter()
+if (available && device) {
+  await connectPrinter({ deviceId: device!.deviceId })
+  await printBuiltInText({
+    text: 'Hello',
+    format: { textSize: 32, align: 'center', style: 'bold' },
+    autoOut: true,
+  })
+  await printBuiltInBarcode({
+    content: '123456789',
+    width: 300,
+    height: 160,
+    textPosition: 1,
+    align: 'center',
+    symbology: 'code128',
+    autoOut: true,
+  })
+}
 ```
 
 ## 真机验证流程
 
 ### BLE 验证
 
-1. 添加插件后构建 Android 或 iOS 自定义基座。
-2. 将自定义基座安装到真机。
-3. 打开应用并进入 `pages/printer/index`。
-4. 点击 `扫描打印机`。
-5. 授权蓝牙扫描、蓝牙连接等系统权限。
-6. 在设备列表中选择 BLE 打印机并连接。
-7. 点击 `语义打印` 或 `ESC打印`。
-8. 确认打印机输出示例小票。
+1. 构建 Android 或 iOS 自定义基座。
+2. 安装到真机，进入 `pages/printer/index`。
+3. 点击「扫描打印机」→ 授权蓝牙权限。
+4. 选择 BLE 打印机并连接。
+5. 点击「语义打印」或「ESC打印」确认输出。
+6. 进入「打印命令测试」页面逐个验证 17 条命令。
 
 ### Wi-Fi 验证
 
-1. 确认手机和 Wi-Fi 打印机位于同一局域网。
-2. 打开应用并进入 `pages/printer/index`。
-3. 在通信方式中选择 `Wi-Fi`。
-4. 输入打印机 IP 和端口，端口可先使用文档示例 `8000`。
-5. 点击 `连接 Wi-Fi`。
-6. 点击 `语义打印` 或 `ESC打印`。
-7. 确认打印机输出示例小票。
-8. 点击 `断开连接`，再测试重连是否正常。
+1. 确认手机和 Wi-Fi 打印机在同一局域网。
+2. 切换通信方式为「Wi-Fi」，输入 IP 和端口。
+3. 点击「连接 Wi-Fi」。
+4. 点击打印按钮确认输出。
+5. 点击「断开连接」验证重连。
 
-预期输出示例：
+预期输出：
 
 ```text
 YUNTU PRINTER
@@ -180,20 +175,19 @@ Time <current time>
 Status OK
 ```
 
-更完整的 Android / iOS QA 步骤见 [docs/printer-uts-plugin.md](./docs/printer-uts-plugin.md)。
-
 ## 目录结构
 
 ```text
 .
 ├── src
-│   ├── pages/printer/index.vue              # 打印插件验证页面
-│   ├── composables/usePrinter.ts            # 页面侧打印状态与操作封装
-│   ├── utils/printerEsc.ts                  # TypeScript ESC/POS 构建工具与测试目标
+│   ├── pages/printer/index.vue              # 主验证页面（扫描/连接/打印）
+│   ├── pages/printer/commands.vue           # 打印命令测试页面（17 个测试用例）
+│   ├── composables/usePrinter.ts            # 打印机状态与操作封装
+│   ├── utils/printerCommandTests.ts         # 打印命令测试定义
+│   ├── utils/printerEsc.ts                  # TypeScript ESC/POS 工具（纯 TS 测试）
 │   └── uni_modules/yuntu-printer-uts        # Android / iOS UTS 打印插件
-├── docs/printer-uts-plugin.md               # 插件需求、兼容说明与真机 QA
-├── vite.config.ts                           # uni-app / Wot UI / UnoCSS 插件配置
-└── package.json                             # 项目脚本与依赖
+├── vite.config.ts                           # uni-app / Wot UI / UnoCSS 配置
+└── package.json
 ```
 
 ## 常用命令
@@ -205,40 +199,36 @@ Status OK
 | `pnpm dev:app-ios` | 运行 iOS App 开发构建 |
 | `pnpm build:h5` | 构建 H5 产物 |
 | `pnpm build:app` | 构建 App 产物 |
-| `pnpm type-check` | 执行 TypeScript 类型检查 |
-| `pnpm lint` | 执行 ESLint 检查 |
-| `pnpm test` | 执行 Vitest 测试 |
-| `pnpm commit` | 使用 git-cz 提交变更 |
+| `pnpm type-check` | TypeScript 类型检查 |
+| `pnpm lint` | ESLint 检查 |
+| `pnpm test` | Vitest 测试（22 个用例） |
+| `pnpm commit` | 使用 git-cz 提交 |
 
 ## 权限说明
 
-Android 端需要蓝牙扫描、蓝牙连接权限。旧版本 Android 的 BLE 扫描行为还可能需要定位权限。Wi-Fi 打印还需要网络访问、网络状态和 Wi-Fi 状态权限。
+Android 需要 `BLUETOOTH_SCAN`、`BLUETOOTH_CONNECT`（Android 12+）或 `ACCESS_FINE_LOCATION`（旧版本）。Wi-Fi 需要 `INTERNET`。
 
-iOS 端需要配置 `NSBluetoothAlwaysUsageDescription`，用于系统蓝牙权限弹窗说明。Wi-Fi 局域网打印需要配置 `NSLocalNetworkUsageDescription`。
+iOS 需要 `NSBluetoothAlwaysUsageDescription`、`NSLocalNetworkUsageDescription`。
 
-项目内的 `usePrinter` 已封装 Android 蓝牙权限申请提示，验证页面会在扫描前按系统版本申请必要权限。Wi-Fi 连接不触发蓝牙权限申请。
+项目内 `usePrinter` 已封装 Android 蓝牙权限申请。
 
 ## 已知限制
 
-- Wi-Fi 打印采用手动 IP + 端口连接，暂不提供局域网自动发现。
-- Android 经典蓝牙 SPP 打印机需要单独的传输实现。
-- 首版非 ASCII 文本会按 `?` 处理；中文打印需要结合目标打印机码页补充 GB18030 / GBK 编码验证。
-- `escImage` 涉及平台图片解码，需在 UTS 侧结合目标平台能力实现和验证。
-- 原生 UTS 网络能力需要 App 自定义基座或正式 App 包验证，H5 预览只能验证页面交互。
+- Wi-Fi 打印需手动输入 IP + 端口，暂不提供局域网自动发现。
+- 非 ASCII 字符会按 `?` 处理；中文打印需结合目标打印机码页通过 `printEsc` 发送编码字节。
+- 原生 UTS 能力需自定义基座验证，H5 只能验证页面交互。
 
 ## 技术栈
 
-- [uni-app](https://uniapp.dcloud.net.cn/)
-- [UTS 插件](https://uniapp.dcloud.net.cn/plugin/uts-plugin.html)
-- [Vue 3](https://vuejs.org/)
-- [Vite](https://vitejs.dev/)
+- [uni-app](https://uniapp.dcloud.net.cn/) / [UTS 插件](https://uniapp.dcloud.net.cn/plugin/uts-plugin.html)
+- [Vue 3](https://vuejs.org/) / [Vite](https://vitejs.dev/)
 - [Wot UI](https://github.com/wot-ui/wot-ui)
-- [@wot-ui/router](https://github.com/wot-ui/my-uni)
 - [UnoCSS](https://unocss.dev/)
+- [Vitest](https://vitest.dev/)
 
 ## 鸣谢
 
-本项目工程底座来自 [Wot Starter](https://github.com/wot-ui/wot-starter)，感谢 Wot UI、uni-helper、uni-ku 等生态项目提供的 uni-app 开发能力。
+工程底座来自 [Wot Starter](https://github.com/wot-ui/wot-starter)。
 
 ## 开源协议
 

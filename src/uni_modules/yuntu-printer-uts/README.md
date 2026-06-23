@@ -1,59 +1,43 @@
 # Yuntu Printer UTS 打印插件
 
-`yuntu-printer-uts` 是一个面向 uni-app App 端的 UTS 打印插件，支持蓝牙 BLE 打印机、局域网 Wi-Fi/TCP 打印机，以及 Noryox NB55 / Handheld_POS_V28 Android 设备的内置打印机。插件统一使用 ESC/POS 指令输出，适合小票、订单、标签前置内容、二维码等热敏打印场景。
+`yuntu-printer-uts` 是一个面向 uni-app App 端的 UTS 打印插件，支持蓝牙 BLE 打印机、局域网 Wi-Fi/TCP 打印机，以及 Noryox NB55 / Handheld_POS_V28 Android 设备的内置打印机。提供流式 ESC/POS 指令构建、语义化小票打印和 Promise 风格的异步连接 API。
 
 ## 功能介绍
 
-- 支持 Android App 和 iOS App，基于原生蓝牙、Socket、系统打印服务实现。
-- 支持扫描附近 BLE 打印机，返回设备名称、设备 ID、RSSI、服务 UUID 等信息。
-- 支持按设备 ID 连接 BLE 打印机，可指定服务 UUID 和写入特征 UUID。
-- 支持按 IP 和端口连接 Wi-Fi/TCP 打印机。
-- 支持 Noryox NB55 / Handheld_POS_V28 Android 设备内置打印机，通过系统 AIDL 打印服务发送 ESC/POS 数据。
-- 支持查询当前连接、断开连接、判断是否已连接。
-- 支持连接状态监听：连接成功、断开连接、连接失败。
-- 支持蓝牙状态监听和打印机返回数据监听。
-- 支持直接发送原始 ESC/POS 字节数组。
-- 支持内置小票文本打印 API：标题、正文多行、走纸、切纸。
-- 支持链式构建 ESC/POS 指令缓冲区后统一发送。
-- 支持打印初始化、对齐方式、字号、加粗、换行、走纸、切纸。
-- 支持 58mm 小票常用二列、三列、四列文本排版辅助方法。
-- 支持二维码 ESC/POS 指令生成。
-- 支持字符串指令和字节指令追加，便于对接特殊打印机指令。
-- 支持蓝牙写入分包，默认 BLE 每包 20 字节；Wi-Fi 和 Noryox 默认一次写入完整数据。
-- 支持 `success`、`fail`、`complete` 风格回调，便于和 uni-app API 风格保持一致。
+- 扫描附近 BLE 打印机，返回设备名称、设备 ID、RSSI 等信息。
+- 按设备 ID 连接 BLE 打印机，可指定服务 UUID 和写入特征 UUID。
+- 按 IP 和端口连接 Wi-Fi/TCP 打印机。
+- 支持 Noryox NB55 Android 设备内置打印机（通过 AIDL 服务）。
+- 流式 ESC/POS 命令构建器：`clearCommandBuffer()`、`escInitializePrinter()`、`escJustification()`、`escText()`、`escQRCode()` 等方法。
+- 58mm 小票二列、三列、四列文本排版工具。
+- 语义化小票打印 `printText()`。
+- 直接发送原始 ESC/POS 字节 `printEsc()`。
+- Noryox 内置打印机顶层 API：文本、条码、二维码、图片、表格、标签。
+- 连接状态事件监听。
+- 蓝牙分包写入（BLE 每包 20 字节，Wi-Fi/Noryox 一次完成）。
+- 全部异步 API 返回 Promise。
 
 ## 平台支持
 
 | 平台 | 支持情况 | 说明 |
 | --- | --- | --- |
-| Android App | 支持 | BLE 通过 Android Bluetooth API，Wi-Fi 通过 TCP Socket，Noryox 内置打印机通过 AIDL 服务。 |
-| iOS App | 支持 | BLE 通过 CoreBluetooth，Wi-Fi 通过 TCP Stream。 |
+| Android App | 支持 | BLE 通过 Bluetooth API，Wi-Fi 通过 TCP Socket，Noryox 通过 AIDL。 |
+| iOS App | 支持 | BLE 通过 CoreBluetooth，Wi-Fi 通过 TCP Stream。内置打印机不可用。 |
 | H5 | 不支持 | UTS 原生插件能力不支持 H5。 |
 | 小程序 | 不支持 | UTS 原生插件能力不支持小程序。 |
-
-> 修改 Android AIDL、Manifest 或 iOS 原生配置后，需要重新制作或运行自定义基座再测试。
 
 ## 权限配置
 
 ### Android
 
-插件会用到以下权限或能力：
-
-- `android.permission.BLUETOOTH`
-- `android.permission.BLUETOOTH_ADMIN`
 - `android.permission.BLUETOOTH_SCAN`
 - `android.permission.BLUETOOTH_CONNECT`
-- `android.permission.ACCESS_FINE_LOCATION`
+- `android.permission.ACCESS_FINE_LOCATION`（Android < 12）
 - `android.permission.INTERNET`
 - `android.permission.ACCESS_NETWORK_STATE`
-- `android.permission.ACCESS_WIFI_STATE`
-- Noryox 内置打印服务包可见性：`com.incar.printerservice`
-
-Android 12 及以上通常需要动态申请 `BLUETOOTH_SCAN` 和 `BLUETOOTH_CONNECT`；Android 旧版本 BLE 扫描通常需要动态申请 `ACCESS_FINE_LOCATION`。
+- Noryox 包可见性：`com.incar.printerservice`
 
 ### iOS
-
-需要在 iOS 配置中声明：
 
 - `NSBluetoothAlwaysUsageDescription`
 - `NSLocalNetworkUsageDescription`
@@ -63,355 +47,278 @@ Android 12 及以上通常需要动态申请 `BLUETOOTH_SCAN` 和 `BLUETOOTH_CON
 ```ts
 import {
   connectPrinter,
+  createEscBuilder,
   disconnectPrinter,
+  onConnectStateChange,
   printText,
   scanPrinters,
-  stopScanPrinters,
+  sendEsc,
 } from '@/uni_modules/yuntu-printer-uts'
 
-scanPrinters({
-  timeout: 10000,
-  success(res) {
-    console.log('发现的打印机', res.devices)
-  },
-  fail(err) {
-    console.error(err.errMsg)
-  },
-  complete() {
-    console.log('扫描结束')
-  },
+// 扫描蓝牙打印机
+const { devices } = await scanPrinters({ timeout: 10000 })
+
+// 连接
+const conn = await connectPrinter({ deviceId: devices[0].deviceId })
+
+// 监听连接状态
+onConnectStateChange(({ state, deviceId }) => {
+  console.log(state, deviceId)
 })
 
-connectPrinter({
-  deviceId: '蓝牙设备 ID',
-  success() {
-    printText({
-      title: 'YUNTU PRINTER',
-      lines: ['订单号: 10001', '状态: OK'],
-      feed: 3,
-      cut: true,
-    })
-  },
+// 语义化小票打印
+await printText({
+  title: 'YUNTU PRINTER',
+  lines: ['订单号: 10001', '状态: OK'],
+  feed: 3,
+  cut: true,
 })
 
-stopScanPrinters({})
-disconnectPrinter({})
+// 流式 ESC/POS 命令构建
+const esc = createEscBuilder()
+esc.clearCommandBuffer()
+esc.escInitializePrinter()
+esc.escJustification('center')
+esc.escTurnEmphasizedMode(true)
+esc.escSetCharcterSize(2)
+esc.escText('TITLE')
+esc.escNewLine()
+esc.escTurnEmphasizedMode(false)
+esc.escSetCharcterSize(1)
+esc.escJustification('left')
+esc.escText('Item A        10.00')
+esc.escNewLine()
+esc.escQRCode({ content: 'https://example.com/order/10001', size: 6 })
+esc.addPrintAndFeedLines(3)
+esc.escCutPaper()
+await sendEsc(esc)
+
+// 断开
+await disconnectPrinter()
 ```
 
 ## 连接 Wi-Fi 打印机
 
 ```ts
-import {
-  connectNet,
-  disconnectPrinter,
-  printText,
-} from '@/uni_modules/yuntu-printer-uts'
+import { connectWifi, printText, disconnectPrinter } from '@/uni_modules/yuntu-printer-uts'
 
-connectNet({
-  ip: '192.168.100.110',
-  port: 8000,
-  timeout: 10000,
-  success(res) {
-    console.log('Wi-Fi 打印机已连接', res.deviceId)
-    printText({
-      title: 'Wi-Fi Printer',
-      lines: ['TCP connected', 'Print OK'],
-      feed: 3,
-      cut: true,
-    })
-  },
-  fail(err) {
-    console.error(err.errMsg)
-  },
-})
-
-disconnectPrinter({})
+await connectWifi({ ip: '192.168.100.110', port: 8000 })
+await printText({ title: 'Wi-Fi Printer', lines: ['OK'], feed: 3, cut: true })
+await disconnectPrinter()
 ```
 
 ## 连接 Noryox 内置打印机
-
-Noryox NB55 / Handheld_POS_V28 Android 设备的内置打印机不是蓝牙外设，插件通过设备内置的系统 AIDL 服务连接：
-
-- 服务包名：`com.incar.printerservice`
-- 服务 Action：`com.incar.printerservice.IPrinterService`
-- 插件内置设备 ID：`noryox:built-in`
-- 写入方式：调用服务的 `printEscposData(byte[])`
-
-推荐先调用 `checkBuiltInPrinter` 检测内置打印服务是否可用，再使用返回的设备 ID 调用 `connectPrinter`。
 
 ```ts
 import {
   checkBuiltInPrinter,
   connectPrinter,
-  printText,
+  printBuiltInBarcode,
+  printBuiltInText,
 } from '@/uni_modules/yuntu-printer-uts'
 
-checkBuiltInPrinter({
-  success(res) {
-    if (!res.available || !res.device) {
-      console.log('当前设备未检测到 Noryox 内置打印服务')
-      return
-    }
+const { available, device } = await checkBuiltInPrinter()
+if (!available) return
 
-    connectPrinter({
-      deviceId: res.device.deviceId,
-      success() {
-        printText({
-          title: 'Noryox Printer',
-          lines: ['Built-in printer', 'Print OK'],
-          feed: 3,
-          cut: true,
-        })
-      },
-    })
-  },
+await connectPrinter({ deviceId: device!.deviceId })
+await printBuiltInText({
+  text: 'Hello',
+  format: { textSize: 32, align: 'center', style: 'bold' },
+  autoOut: true,
+})
+await printBuiltInBarcode({
+  content: '123456789',
+  width: 300,
+  height: 160,
+  textPosition: 1,
+  align: 'center',
+  symbology: 'code128',
+  autoOut: true,
 })
 ```
 
-## 打印文本小票
+## Noryox 内置打印机 API
 
-`printText` 会自动生成一组基础 ESC/POS 指令：初始化打印机、居中打印标题、左对齐打印正文、走纸，并按需切纸。
+推荐使用顶层 `printBuiltIn*` 方法。它们在 Android Noryox 设备上可用，iOS 会返回“内置打印机不可用”错误。`getBuiltInPrinter()` 仍保留为可选对象 API，主要用于兼容直接对象调用场景。
+
+### 文本、条码、二维码、图片
 
 ```ts
-import { printText } from '@/uni_modules/yuntu-printer-uts'
+await printBuiltInText({
+  text: 'Noryox native text',
+  format: { textSize: 32, align: 'center', style: 'bold' },
+  autoOut: true,
+})
+await printBuiltInBarcode({
+  content: '123456789',
+  width: 300,
+  height: 160,
+  textPosition: 1,
+  align: 'center',
+  symbology: 'code128',
+  autoOut: true,
+})
+await printBuiltInQrCode({ content: '123456789', width: 300, height: 300, align: 'center', autoOut: true })
+await printBuiltInImage({ base64Str: 'data:image/png;base64,...', type: 'blackWhite', align: 'center', autoOut: true })
+```
 
-printText({
-  title: '云途小票',
-  lines: [
-    '商品A        2 x 10.00',
-    '商品B        1 x 19.90',
-    '合计         39.90',
+文本、条码、二维码、图片和表格方法均支持 `autoOut` 自动走纸出票。自定义字库可通过 `format.font = 5` 和 `format.path` 设置。
+
+### 表格打印
+
+```ts
+const weights = [2, 1, 1, 1]
+const center = { align: 'center' as const, textSize: 24 }
+
+await printBuiltInTable({
+  rows: [
+    { texts: ['商品', '数量', '单价', '金额'], weights, formats: [center, center, center, center] },
+    { texts: ['Coffee', '2', '12.00', '24.00'], weights },
   ],
-  feed: 3,
-  cut: true,
-  chunkSize: 20,
-  success() {
-    console.log('发送成功')
-  },
-  fail(err) {
-    console.error(err.errMsg)
-  },
+  autoOut: true,
 })
 ```
 
-## 构建 ESC/POS 指令打印
-
-当需要更精细控制格式时，可以先清空指令缓冲区，再逐条追加 ESC/POS 指令，最后调用 `writeData` 发送。
+### 标签打印
 
 ```ts
-import {
-  addPrintAndFeedLines,
-  clearCommandBuffer,
-  escCutPaper,
-  escInitializePrinter,
-  escJustification,
-  escNewLine,
-  escQRCode,
-  escSetCharcterSize,
-  escText,
-  escTurnEmphasizedMode,
-  escTwoText58,
-  writeData,
-} from '@/uni_modules/yuntu-printer-uts'
-
-clearCommandBuffer()
-escInitializePrinter()
-
-escJustification('center')
-escSetCharcterSize(2)
-escTurnEmphasizedMode(true)
-escText('YUNTU')
-escNewLine()
-
-escSetCharcterSize(1)
-escTurnEmphasizedMode(false)
-escJustification('left')
-escText(escTwoText58({ left: '商品A', right: '10.00' }))
-escNewLine()
-escText(escTwoText58({ left: '商品B', right: '19.90' }))
-escNewLine()
-
-escJustification('center')
-escQRCode({ content: 'https://example.com/order/10001', size: 6 })
-addPrintAndFeedLines(3)
-escCutPaper()
-
-writeData((info) => {
-  console.log('写入结果', info.complete, info.byteLength, info.chunkCount, info.msg)
+await printBuiltInLabel({
+  height: 240,
+  gap: 16,
+  actions: [
+    { type: 'text', text: '\nModel:\t\tNB55', format: { textSize: 24 } },
+    { type: 'barcode', content: '1234567890987654321', width: 320, height: 90, textPosition: 2, align: 'left', symbology: 'code128' },
+  ],
+  autoLocate: false,
+  detectBeforeLocate: false,
 })
 ```
 
 ## 发送原始 ESC/POS 字节
 
-如果业务侧已经生成完整 ESC/POS 数据，可以直接调用 `printEsc`。
-
 ```ts
 import { printEsc } from '@/uni_modules/yuntu-printer-uts'
 
-printEsc({
-  bytes: [0x1B, 0x40, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x0A],
-  chunkSize: 20,
-  success() {
-    console.log('原始指令发送成功')
-  },
-})
+await printEsc([0x1B, 0x40, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x0A])
 ```
 
 ## 事件监听
 
 ```ts
-import {
-  onBlueStateChange,
-  onConnectStateChange,
-  onDataReceive,
-} from '@/uni_modules/yuntu-printer-uts'
+import { onConnectStateChange } from '@/uni_modules/yuntu-printer-uts'
 
-onBlueStateChange((on) => {
-  console.log('蓝牙状态', on)
-})
-
-onConnectStateChange((payload) => {
-  console.log('连接状态', payload.state, payload.deviceId, payload.errMsg)
-})
-
-onDataReceive((data) => {
-  console.log('打印机返回数据', data)
+onConnectStateChange(({ state, deviceId, errMsg }) => {
+  // state: 'connectSuccess' | 'disconnect' | 'connectFail'
+  console.log(state, deviceId, errMsg)
 })
 ```
 
-连接状态 `state` 取值：
+## API 参考
 
-- `connectSuccess`：连接成功。
-- `disconnect`：连接断开。
-- `connectFail`：连接或写入失败。
+### 连接与状态
 
-## API 列表
-
-### 推荐连接 API
-
-| API | 说明 |
+| API | 签名 |
 | --- | --- |
-| `scanPrinters(options)` | 扫描 BLE 打印机，支持 `timeout`、`serviceUUIDs`。 |
-| `stopScanPrinters(options)` | 停止 BLE 扫描。 |
-| `connectPrinter(options)` | 连接 BLE 打印机或 Noryox 内置打印机。 |
-| `connectNet(options)` | 通过 IP 和端口连接 Wi-Fi/TCP 打印机。 |
-| `disconnectPrinter(options)` | 断开当前打印机连接。 |
-| `getConnectedPrinter(options)` | 获取当前连接信息；未连接时返回空连接对象。 |
-| `checkBuiltInPrinter(options)` | 检测 Android Noryox 内置打印服务是否可用。 |
-| `printText(options)` | 按标题和多行文本快速打印小票。 |
-| `printEsc(options)` | 直接发送原始 ESC/POS 字节数组。 |
+| `scanPrinters(options?)` | `Promise<{ devices: PrinterDevice[] }>` |
+| `stopScanPrinters()` | `void` |
+| `connectPrinter(options)` | `Promise<PrinterConnection>` |
+| `connectWifi(options)` | `Promise<PrinterConnection>` |
+| `disconnectPrinter()` | `Promise<boolean>` |
+| `getConnectedPrinter()` | `PrinterConnection \| null` |
+| `checkBuiltInPrinter()` | `Promise<{ available, device? }>` |
+| `onConnectStateChange(cb)` | `void` |
 
-### 事件 API
+### 打印
 
-| API | 说明 |
+| API | 签名 |
 | --- | --- |
-| `onBlueStateChange(callback)` | 监听蓝牙是否可用或扫描是否发现设备。 |
-| `onConnectStateChange(callback)` | 监听连接成功、断开、连接失败等状态。 |
-| `onDataReceive(callback)` | 监听蓝牙、Wi-Fi 或 Noryox 服务返回的数据。 |
+| `printText(options)` | `Promise<WriteDataResult>` |
+| `printEsc(bytes, chunkSize?)` | `Promise<WriteDataResult>` |
+| `createEscBuilder()` | `EscBuilder` |
+| `sendEsc(builder)` | `Promise<WriteDataResult>` |
+| `getBuiltInPrinter()` | `BuiltInPrinter \| null` |
+| `printBuiltInText(options)` | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInBarcode(options)` | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInQrCode(options)` | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInImage(options)` | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInLabel(options)` | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInTable(options)` | `Promise<boolean>` |
 
-### ESC/POS 指令 API
+### EscBuilder 方法
 
-| API | 说明 |
+`EscBuilder` 方法会修改内部 `bytes` 缓冲区；调用 `sendEsc(builder)` 发送到已连接打印机。
+
+| 方法 | 说明 |
 | --- | --- |
-| `clearCommandBuffer()` | 清空当前 ESC/POS 指令缓冲区。 |
-| `escInitializePrinter()` | 初始化打印机。 |
-| `escJustification(position)` | 设置对齐方式，`left`、`center`、`right`。 |
-| `escSetCharcterSize(size)` | 设置字符大小，支持 `1` 或 `2`。 |
-| `escTurnEmphasizedMode(on)` | 开启或关闭加粗。 |
-| `escText(text)` | 追加文本。 |
-| `escNewLine()` | 追加换行。 |
-| `addPrintAndFeedLines(lines)` | 打印并走纸指定行数。 |
-| `escCutPaper()` | 追加切纸指令。 |
-| `escQRCode({ content, size })` | 追加二维码指令。 |
-| `escStringCommand(command)` | 追加字符串指令。 |
-| `escBytesCommand(command)` | 追加字节数组指令。 |
-| `writeData(callback)` | 发送当前缓冲区中的 ESC/POS 指令。 |
+| `clearCommandBuffer()` | 清空指令缓冲区 |
+| `escInitializePrinter()` | ESC @ 初始化打印机 |
+| `escJustification(p)` | 对齐：`'left'` \| `'center'` \| `'right'` |
+| `escSetCharcterSize(s)` | 字符大小：`1` 或 `2` |
+| `escTurnEmphasizedMode(on)` | 开/关加粗 |
+| `escCutPaper()` | GS V 切纸 |
+| `escNewLine()` | LF 换行 |
+| `addPrintAndFeedLines(n)` | ESC d 走纸 n 行 |
+| `escText(s)` | 追加 ASCII 文本 |
+| `escQRCode({ content, size })` | GS ( k 二维码 |
+| `escStringCommand(command)` | 追加原始字符串命令 |
+| `escBytesCommand(command)` | 追加原始字节命令 |
 
-### 58mm 排版辅助 API
+### BuiltInPrinter 方法
 
-| API | 说明 |
+`BuiltInPrinter` 是兼容对象 API；新代码优先使用上方顶层 `printBuiltIn*` 方法。
+
+| 方法 | 返回 |
 | --- | --- |
-| `escTwoText58({ left, right })` | 生成 58mm 二列文本。 |
-| `escThreeText58({ left, middle, right })` | 生成 58mm 三列文本。 |
-| `escFourText58({ one, two, three, four })` | 生成 58mm 四列文本。 |
-
-### 兼容旧 API
-
-以下 API 保留用于兼容旧调用方式，推荐新业务优先使用上面的 `scanPrinters`、`connectPrinter`、`disconnectPrinter` 等对象参数 API。
-
-| API | 说明 |
-| --- | --- |
-| `scanBlue(callback)` | 扫描 BLE 打印机，并在发现设备时回调最新设备。 |
-| `stopScanBlue()` | 停止 BLE 扫描。 |
-| `connectBlue(deviceId)` | 按设备 ID 连接 BLE 打印机。 |
-| `disconnect()` | 断开当前连接。 |
-| `isConnect()` | 判断当前是否已连接。 |
+| `printText(text, format?, textWidth?, align?, autoOut?)` | `Promise<BuiltInPrinterResult>` |
+| `printBarcode(content, w, h, pos?, align?, symbology?, autoOut?)` | `Promise<BuiltInPrinterResult>` |
+| `printQrCode(content, w, h, align?, autoOut?)` | `Promise<BuiltInPrinterResult>` |
+| `printImage(base64, type?, align?, autoOut?)` | `Promise<BuiltInPrinterResult>` |
+| `printLabel(height, gap, actions, autoLocate?, detect?)` | `Promise<BuiltInPrinterResult>` |
+| `printTable(rows, autoOut?)` | `Promise<boolean>` |
+| `clearLabelLearning()` | `Promise<BuiltInPrinterResult>` |
 
 ## 类型说明
 
 ```ts
-type PrinterConnectionType = 'bluetooth' | 'wifi' | 'noryox'
-type ConnectState = 'connectSuccess' | 'disconnect' | 'connectFail'
-type EscJustification = 'left' | 'center' | 'right'
-
 type PrinterDevice = {
-  deviceId: string
-  name: string
-  rssi: number
-  serviceUUIDs: string[]
-  type?: PrinterConnectionType
+  deviceId: string; name: string; rssi: number
+  serviceUUIDs: string[]; type?: 'bluetooth' | 'wifi' | 'noryox'
 }
 
 type PrinterConnection = {
-  deviceId: string
-  name: string
-  serviceUUID: string
-  writeCharacteristicUUID: string
-  type?: PrinterConnectionType
-  ip?: string
-  port?: number
+  deviceId: string; name: string; serviceUUID: string
+  writeCharacteristicUUID: string; ip?: string; port?: number
+  type?: 'bluetooth' | 'wifi' | 'noryox'
 }
 
-type PrinterError = {
-  errCode: number
-  errMsg: string
-}
+type BuiltInPrinterResult = { code: number; ok: boolean; message: string }
+type WriteDataResult = { byteLength: number; chunkCount: number; complete?: boolean; msg?: string }
 ```
 
 ## 错误码
 
 | 错误码 | 说明 |
 | --- | --- |
-| `1001` | 蓝牙不可用或未开启。 |
-| `1002` | 蓝牙权限未授予。 |
-| `1003` | 扫描失败。 |
-| `1004` | 未找到设备。 |
-| `1005` | 连接失败。 |
-| `1006` | 未找到蓝牙服务。 |
-| `1007` | 未找到可写特征值。 |
-| `1008` | 打印机未连接。 |
-| `1009` | 写入失败。 |
-| `1010` | 打印数据为空或不合法。 |
-| `1011` | 当前平台不支持。 |
-| `1012` | 内置打印机不可用。 |
-| `1013` | 内置打印服务绑定失败。 |
-| `1014` | 内置打印服务未连接。 |
+| `1001` | 蓝牙不可用或未开启 |
+| `1002` | 蓝牙权限未授予 |
+| `1003` | 扫描失败 |
+| `1004` | 未找到设备 |
+| `1005` | 连接失败 |
+| `1006` | 未找到蓝牙服务 |
+| `1007` | 未找到可写特征值 |
+| `1008` | 打印机未连接 |
+| `1009` | 写入失败 |
+| `1010` | 打印数据为空或不合法 |
+| `1011` | 当前平台不支持 |
+| `1012` | 内置打印机不可用 |
+| `1013` | 内置打印服务绑定失败 |
+| `1014` | 内置打印服务未连接 |
 
 ## 注意事项
 
 - BLE 打印前请先完成系统权限申请，再调用 `scanPrinters`。
-- iOS 连接蓝牙外设前通常需要先扫描，插件会根据扫描结果保存外设对象。
-- Android 可通过设备 MAC 地址连接 BLE 打印机；iOS 使用 CoreBluetooth 外设 UUID。
-- 默认写入特征 UUID 包含常见打印机特征：`0000ff02-0000-1000-8000-00805f9b34fb`、`0000ff01-0000-1000-8000-00805f9b34fb`、`49535343-8841-43f4-a8d4-ecbe34729bb3`。如打印机使用其他特征，请在 `connectPrinter` 中传入 `writeCharacteristicUUIDs`。
-- 当前 `escText` 和 `escQRCode` 的内置编码以 ASCII 为主，非 ASCII 字符会按 `?` 处理；如需完整中文打印，建议业务侧根据目标打印机编码生成字节后使用 `printEsc` 或 `escBytesCommand`。
-- `escImage` 当前接口已预留，但通用图片解码和光栅化未实现，直接调用会抛出错误；图片打印请先在业务侧生成打印机支持的 ESC/POS 光栅字节后通过 `printEsc` 发送。
-- Wi-Fi 打印机需要手机和打印机在可访问的同一网络内，并确认打印机端口已开放。
-- 可参考项目中的 `src/composables/usePrinter.ts` 和 `src/pages/printer/index.vue` 查看完整页面接入示例。
-
-## 调试建议
-
-- 原生插件必须编译进 App 运行时，调试时请使用自定义基座或正式 App 包。
-- Android 增加或修改 AIDL、Manifest 后，请重新制作自定义基座。
-- 先用 `getConnectedPrinter` 和 `onConnectStateChange` 确认连接状态，再发送打印数据。
-- 打印无反应时，优先确认写入特征 UUID、打印机编码、打印机纸张状态和 ESC/POS 指令是否被目标机型支持。
-- 设备验证流程可参考 `docs/printer-uts-plugin.md`。
+- iOS 连接蓝牙外设前需要先扫描，插件会缓存扫描到的外设对象。
+- 默认写入特征 UUID：`0000ff02-...`、`0000ff01-...`、`49535343-...`。如打印机使用其他特征，请在 `connectPrinter` 中传入 `writeCharacteristicUUIDs`。
+- 当前文本编码以 ASCII 为主，非 ASCII 字符会按 `?` 处理。中文打印建议业务侧生成 GB18030/GBK 字节后通过 `printEsc` 发送。
+- Wi-Fi 打印机需手机和打印机在同一网络内。
+- Noryox 内置打印机仅限 Android，设备 ID 为 `noryox:built-in`。

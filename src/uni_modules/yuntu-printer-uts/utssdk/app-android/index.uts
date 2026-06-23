@@ -2,15 +2,18 @@ import { BluetoothAdapter, BluetoothDevice, BluetoothGatt, BluetoothGattCallback
 import { BluetoothLeScanner, ScanCallback, ScanResult } from 'android.bluetooth.le'
 import { ComponentName, Context, Intent, ServiceConnection } from 'android.content'
 import { PackageManager } from 'android.content.pm'
+import { Bitmap, BitmapFactory } from 'android.graphics'
 import { Build, Handler, IBinder, Looper, Parcel } from 'android.os'
+import { Base64 } from 'android.util'
 import { BufferedInputStream, BufferedOutputStream } from 'java.io'
 import { InetSocketAddress, Socket } from 'java.net'
 import { UUID } from 'java.util'
+import { PrintTextFormat } from 'net.nyx.printerservice.print'
 import { splitBytes } from '../common/chunk.uts'
-import { buildReceipt, escFourText58 as buildFourText58, escThreeText58 as buildThreeText58, escTwoText58 as buildTwoText58, PrinterEscBuilder } from '../common/esc.uts'
+import { buildReceipt, PrinterEscBuilder } from '../common/esc.uts'
 import type { ReceiptPayload } from '../common/esc.uts'
-import type { AddPrintAndFeedLines, BlueStateCallback, CheckBuiltInPrinter, CheckBuiltInPrinterOptions, ClearCommandBuffer, ConnectBlue, ConnectNet, ConnectNetOptions, ConnectPrinter, ConnectPrinterOptions, ConnectStateCallback, DataReceiveCallback, Disconnect, DisconnectPrinter, DisconnectPrinterOptions, EscBytesCommand, EscCutPaper, EscImage, EscInitializePrinter, EscJustificationCommand, EscNewLine, EscQRCode, EscSetCharcterSize, EscStringCommand, EscText, EscThreeText58, EscTurnEmphasizedMode, EscTwoText58, EscFourText58, GetConnectedPrinter, GetConnectedPrinterOptions, IsConnect, OnBlueStateChange, OnConnectStateChange, OnDataReceive, PrintEsc, PrintEscOptions, PrintText, PrintTextOptions, PrinterConnection, PrinterDevice, ScanBlue, ScanPrinters, ScanPrintersOptions, StopScanBlue, StopScanPrinters, StopScanPrintersOptions, WriteData, WriteDataCallback } from '../interface.uts'
-import { createPrinterError, PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, PRINTER_ERROR_BUILT_IN_UNAVAILABLE, PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, PRINTER_ERROR_CONNECT_FAILED, PRINTER_ERROR_DEVICE_NOT_FOUND, PRINTER_ERROR_INVALID_PAYLOAD, PRINTER_ERROR_NOT_CONNECTED, PRINTER_ERROR_PERMISSION_DENIED, PRINTER_ERROR_SCAN_FAILED, PRINTER_ERROR_SERVICE_BIND_FAILED, PRINTER_ERROR_SERVICE_NOT_FOUND, PRINTER_ERROR_WRITE_FAILED } from '../unierror.uts'
+import type { BlueStateCallback, BuiltInBarcodeSymbology, BuiltInImageType, BuiltInPrinterResult, BuiltInTextAlign, BuiltInTextFormat, BuiltInTextStyle, CheckBuiltInPrinterOptions, CheckBuiltInPrinterSuccess, ConnectNetOptions, ConnectPrinterOptions, ConnectPrinterSimpleOptions, ConnectStateCallback, ConnectWifiSimpleOptions, DataReceiveCallback, DisconnectPrinterOptions, PrintBuiltInBarcodeOptions, PrintBuiltInImageOptions, PrintBuiltInLabelOptions, PrintBuiltInQrCodeOptions, PrintBuiltInTableTextOptions, PrintBuiltInTextOptions, PrintEscOptions, PrintTextOptions, PrintTextSimpleOptions, PrinterConnection, PrinterDevice, PrinterError, ScanPrintersOptions, ScanPrintersSimpleOptions, ScanPrintersSuccess, WriteDataResult } from '../interface.uts'
+import { createPrinterError, PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, PRINTER_ERROR_BUILT_IN_UNAVAILABLE, PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, PRINTER_ERROR_CONNECT_FAILED, PRINTER_ERROR_DEVICE_NOT_FOUND, PRINTER_ERROR_INVALID_PAYLOAD, PRINTER_ERROR_NOT_CONNECTED, PRINTER_ERROR_PERMISSION_DENIED, PRINTER_ERROR_SCAN_FAILED, PRINTER_ERROR_SERVICE_BIND_FAILED, PRINTER_ERROR_SERVICE_NOT_CONNECTED, PRINTER_ERROR_SERVICE_NOT_FOUND, PRINTER_ERROR_WRITE_FAILED } from '../unierror.uts'
 
 const DEFAULT_WRITE_CHARACTERISTIC_UUIDS = [
   '0000ff02-0000-1000-8000-00805f9b34fb',
@@ -20,10 +23,32 @@ const DEFAULT_WRITE_CHARACTERISTIC_UUIDS = [
 const NORYOX_PACKAGE_NAME = 'com.incar.printerservice'
 const NORYOX_SERVICE_ACTION = 'com.incar.printerservice.IPrinterService'
 const NORYOX_INTERFACE_DESCRIPTOR = 'net.nyx.printerservice.print.IPrinterService'
+const NORYOX_TRANSACTION_PRINT_TEXT: Int = 7
+const NORYOX_TRANSACTION_PRINT_TEXT2: Int = 8
+const NORYOX_TRANSACTION_PRINT_BARCODE: Int = 9
+const NORYOX_TRANSACTION_PRINT_QR_CODE: Int = 10
+const NORYOX_TRANSACTION_PRINT_BITMAP: Int = 11
+const NORYOX_TRANSACTION_LABEL_LOCATE: Int = 12
+const NORYOX_TRANSACTION_LABEL_PRINT_END: Int = 13
+const NORYOX_TRANSACTION_LABEL_LOCATE_AUTO: Int = 14
+const NORYOX_TRANSACTION_LABEL_DETECT_AUTO: Int = 15
+const NORYOX_TRANSACTION_HAS_LABEL_LEARNING: Int = 16
+const NORYOX_TRANSACTION_CLEAR_LABEL_LEARNING: Int = 17
 const NORYOX_TRANSACTION_PRINT_ESCPOS_DATA: Int = 19
+const NORYOX_TRANSACTION_PRINT_TABLE_TEXT: Int = 20
+const NORYOX_TRANSACTION_PRINT_END_AUTO_OUT: Int = 21
 const NORYOX_BUILT_IN_DEVICE_ID = 'noryox:built-in'
 const NORYOX_SERVICE_UUID = 'noryox-aidl'
 const NORYOX_WRITE_CHARACTERISTIC_UUID = 'printEscposData'
+
+type AndroidBuiltInTableRow = { texts: string[], weights: Int[], formats?: BuiltInTextFormat[] }
+type AndroidBuiltInTableOptions = { rows: AndroidBuiltInTableRow[], autoOut?: boolean }
+type AndroidBuiltInLabelAction = {
+  type: string, text?: string, format?: BuiltInTextFormat
+  content?: string, width?: Int, height?: Int, textPosition?: Int
+  align?: BuiltInTextAlign, symbology?: BuiltInBarcodeSymbology
+}
+type AndroidBuiltInLabelOptions = { height: Int, gap: Int, autoLocate?: boolean, detectBeforeLocate?: boolean, actions: AndroidBuiltInLabelAction[] }
 
 let bluetoothAdapter: BluetoothAdapter | null = null
 let scanner: BluetoothLeScanner | null = null
@@ -42,7 +67,6 @@ let connectedPrinter: PrinterConnection | null = null
 let blueStateCallback: BlueStateCallback | null = null
 let connectStateCallback: ConnectStateCallback | null = null
 let dataReceiveCallback: DataReceiveCallback | null = null
-const commandBuilder = new PrinterEscBuilder()
 
 type CompleteCallback = () => void
 
@@ -149,14 +173,494 @@ function printNoryoxEscposData(service: IBinder, bytes: kotlin.ByteArray): kotli
   }
 }
 
-function createEmptyConnection(): PrinterConnection {
+function getBuiltInSdkResultMessage(code: Int): string {
+  if (code == 0) return '成功'
+  if (code == -1001) return '发送失败'
+  if (code == -1002) return '参数错误'
+  if (code == -1003) return '超时'
+  if (code == -1004) return '接收错误'
+  if (code == -1005) return '其他异常'
+  if (code == -1006) return '收发指令不一致'
+  if (code == -1015) return '未知命令'
+  if (code == -1099) return '功能不支持'
+  if (code == -1100) return '设备未连接'
+  if (code == -1101) return '设备断开连接'
+  if (code == -1102) return '设备已连接'
+  if (code == -1103) return '设备连接失败'
+  if (code == -1104) return '设备不支持'
+  if (code == -1105) return '未找到设备'
+  if (code == -1106) return '设备打开失败'
+  if (code == -1107) return '设备无权限'
+  if (code == -1108) return '蓝牙不支持'
+  if (code == -1109) return '蓝牙未开启'
+  if (code == -1110) return '缺少定位权限'
+  if (code == -1111) return '无已配对蓝牙设备'
+  if (code == -1112) return '蓝牙扫描超时'
+  if (code == -1113) return '蓝牙扫描失败'
+  if (code == -1114) return '蓝牙扫描已停止'
+  if (code == -1201) return '打印机仓盖未关闭'
+  if (code == -1202) return '打印机参数错误'
+  if (code == -1203) return '打印机缺纸'
+  if (code == -1204) return '打印机过热'
+  if (code == -1205) return '打印机未知异常'
+  if (code == -1206) return '打印机正在打印'
+  if (code == -1207) return '打印机无 NFC 标签'
+  if (code == -1208) return '打印机 NFC 标签没有剩余次数'
+  if (code == -1209) return '打印机低电量'
+  if (code == -1215) return '打印机未知命令'
+  if (code == -1290) return '打印机标签定位错误'
+  if (code == -1291) return '打印机标签纸检测错误'
+  if (code == -1292) return '打印机未检测标签纸'
+  if (code == -1301) return '固件文件错误'
+  if (code == -1302) return '固件 CRC 错误'
+  return `未知返回码 ${code}`
+}
+
+function createBuiltInResult(code: Int): BuiltInPrinterResult {
   return {
-    deviceId: '',
-    name: '',
-    serviceUUID: '',
-    type: 'bluetooth',
-    writeCharacteristicUUID: '',
+    code: code.toInt(),
+    ok: code == 0,
+    message: getBuiltInSdkResultMessage(code.toInt()),
   }
+}
+
+function createBuiltInWriteError(result: BuiltInPrinterResult): PrinterError {
+  return createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Noryox printer SDK returned ${result.code}: ${result.message}`)
+}
+
+function rejectPrinterError(reject: (reason?: any) => void, error: PrinterError): void {
+  reject(error.errMsg)
+}
+
+function rejectBuiltInStepError(reject: (reason?: any) => void, step: string, code: Int): void {
+  const result = createBuiltInResult(code)
+  rejectPrinterError(reject, createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Noryox ${step} failed with code ${result.code}: ${result.message}`))
+}
+
+function normalizeBase64(value: string): string {
+  const marker = 'base64,'
+  const index = value.indexOf(marker)
+  if (index >= 0) {
+    return value.substring(index + marker.length)
+  }
+  return value
+}
+
+function decodeBase64Bitmap(base64Str: string): Bitmap | null {
+  try {
+    const bytes = Base64.decode(normalizeBase64(base64Str), Base64.DEFAULT)
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+  }
+  catch (_error) {
+    return null
+  }
+}
+
+function transactNoryoxInt(service: IBinder, code: Int, write: (data: Parcel) => void): Int {
+  const data = Parcel.obtain()
+  const reply = Parcel.obtain()
+  try {
+    data.writeInterfaceToken(NORYOX_INTERFACE_DESCRIPTOR)
+    write(data)
+    service.transact(code, data, reply, 0)
+    reply.readException()
+    return reply.readInt()
+  }
+  finally {
+    reply.recycle()
+    data.recycle()
+  }
+}
+
+function transactNoryoxBoolean(service: IBinder, code: Int, write: (data: Parcel) => void): boolean {
+  const data = Parcel.obtain()
+  const reply = Parcel.obtain()
+  try {
+    data.writeInterfaceToken(NORYOX_INTERFACE_DESCRIPTOR)
+    write(data)
+    service.transact(code, data, reply, 0)
+    reply.readException()
+    return reply.readInt() != 0
+  }
+  finally {
+    reply.recycle()
+    data.recycle()
+  }
+}
+
+function writePrintTextFormat(data: Parcel, format: PrintTextFormat) {
+  data.writeInt(1)
+  format.writeToParcel(data, 0)
+}
+
+function writeStringArrayToParcel(data: Parcel, values: string[]) {
+  data.writeInt(values.length.toInt())
+  for (let index = 0; index < values.length; index += 1) {
+    data.writeString(values[index])
+  }
+}
+
+function writeIntArrayToParcel(data: Parcel, values: Int[]) {
+  data.writeInt(values.length.toInt())
+  for (let index = 0; index < values.length; index += 1) {
+    data.writeInt(values[index].toInt())
+  }
+}
+
+function copyIntArray(values: Int[]): Int[] {
+  const result: Int[] = []
+  for (let index = 0; index < values.length; index += 1) {
+    result.push(values[index].toInt())
+  }
+  return result
+}
+
+function writePrintTextFormatArrayToParcel(data: Parcel, values: PrintTextFormat[]) {
+  data.writeInt(values.length.toInt())
+  for (let index = 0; index < values.length; index += 1) {
+    writePrintTextFormat(data, values[index])
+  }
+}
+
+function printNoryoxTableText(service: IBinder, texts: string[], weights: Int[], formats: PrintTextFormat[]): Int {
+  const data = Parcel.obtain()
+  const reply = Parcel.obtain()
+  try {
+    data.writeInterfaceToken(NORYOX_INTERFACE_DESCRIPTOR)
+    writeStringArrayToParcel(data, texts)
+    writeIntArrayToParcel(data, weights)
+    writePrintTextFormatArrayToParcel(data, formats)
+    service.transact(NORYOX_TRANSACTION_PRINT_TABLE_TEXT, data, reply, 0)
+    reply.readException()
+    return reply.readInt()
+  }
+  finally {
+    reply.recycle()
+    data.recycle()
+  }
+}
+
+function printNoryoxEndAutoOut(service: IBinder): Int {
+  const data = Parcel.obtain()
+  const reply = Parcel.obtain()
+  try {
+    data.writeInterfaceToken(NORYOX_INTERFACE_DESCRIPTOR)
+    service.transact(NORYOX_TRANSACTION_PRINT_END_AUTO_OUT, data, reply, 0)
+    reply.readException()
+    return reply.readInt()
+  }
+  finally {
+    reply.recycle()
+    data.recycle()
+  }
+}
+
+function printNoryoxText(service: IBinder, options: PrintBuiltInTextOptions): Int {
+  const format = createPrintTextFormat(options.format ?? null)
+  if (options.textWidth != null) {
+    return transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_TEXT2, (data: Parcel) => {
+      data.writeString(options.text)
+      writePrintTextFormat(data, format)
+      data.writeInt(options.textWidth!.toInt())
+      data.writeInt(builtInAlignToNative(options.align ?? options.format?.align ?? null).toInt())
+    })
+  }
+
+  return transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_TEXT, (data: Parcel) => {
+    data.writeString(options.text)
+    writePrintTextFormat(data, format)
+  })
+}
+
+function builtInBarcodeSymbologyToNative(symbology: string | null): Int {
+  if (symbology == 'code39') return 1
+  if (symbology == 'code93') return 2
+  if (symbology == 'upcA') return 3
+  if (symbology == 'upcE') return 4
+  if (symbology == 'ean13') return 5
+  if (symbology == 'ean8') return 6
+  if (symbology == 'itf') return 7
+  if (symbology == 'codabar') return 8
+  return 0
+}
+
+function printNoryoxBarcode(service: IBinder, options: PrintBuiltInBarcodeOptions): Int {
+  return transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_BARCODE, (data: Parcel) => {
+    data.writeString(options.content)
+    data.writeInt(options.width.toInt())
+    data.writeInt(options.height.toInt())
+    data.writeInt((options.textPosition ?? 0).toInt())
+    data.writeInt(builtInAlignToNative(options.align ?? null).toInt())
+    data.writeInt(builtInBarcodeSymbologyToNative(options.symbology ?? null).toInt())
+  })
+}
+
+function printNoryoxQrCode(service: IBinder, options: PrintBuiltInQrCodeOptions): Int {
+  return transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_QR_CODE, (data: Parcel) => {
+    data.writeString(options.content)
+    data.writeInt(options.width.toInt())
+    data.writeInt(options.height.toInt())
+    data.writeInt(builtInAlignToNative(options.align ?? null).toInt())
+  })
+}
+
+function printNoryoxBitmap(service: IBinder, bitmap: Bitmap, type: string | null, align: string | null): Int {
+  return transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_BITMAP, (data: Parcel) => {
+    data.writeInt(1)
+    bitmap.writeToParcel(data, 0)
+    data.writeInt(type == 'grayscale' ? 1 : 0)
+    data.writeInt(builtInAlignToNative(align).toInt())
+  })
+}
+
+function printNoryoxLabelLocate(service: IBinder, height: Int, gap: Int, autoLocate: boolean): Int {
+  return transactNoryoxInt(service, autoLocate ? NORYOX_TRANSACTION_LABEL_LOCATE_AUTO : NORYOX_TRANSACTION_LABEL_LOCATE, (data: Parcel) => {
+    data.writeInt(height.toInt())
+    data.writeInt(gap.toInt())
+  })
+}
+
+function printNoryoxLabelPrintEnd(service: IBinder): Int {
+  return transactNoryoxInt(service, NORYOX_TRANSACTION_LABEL_PRINT_END, (_data: Parcel) => {})
+}
+
+function printNoryoxLabelDetectAuto(service: IBinder): Int {
+  return transactNoryoxInt(service, NORYOX_TRANSACTION_LABEL_DETECT_AUTO, (_data: Parcel) => {})
+}
+
+function hasNoryoxLabelLearning(service: IBinder): boolean {
+  return transactNoryoxBoolean(service, NORYOX_TRANSACTION_HAS_LABEL_LEARNING, (_data: Parcel) => {})
+}
+
+function clearNoryoxLabelLearning(service: IBinder): Int {
+  return transactNoryoxInt(service, NORYOX_TRANSACTION_CLEAR_LABEL_LEARNING, (_data: Parcel) => {})
+}
+
+function builtInAlignToNative(align: string | null): Int {
+  if (align == 'center') {
+    return 1
+  }
+  if (align == 'right') {
+    return 2
+  }
+  return 0
+}
+
+function builtInStyleToNative(style: string | null): Int {
+  if (style == 'bold') {
+    return 1
+  }
+  if (style == 'italic') {
+    return 2
+  }
+  if (style == 'boldItalic') {
+    return 3
+  }
+  return 0
+}
+
+function createPrintTextFormat(payload: BuiltInTextFormat | null): PrintTextFormat {
+  const format = new PrintTextFormat()
+  if (payload == null) {
+    return format
+  }
+  if (payload.textSize != null) {
+    format.setTextSize(payload.textSize!.toInt())
+  }
+  if (payload.underline != null) {
+    format.setUnderline(payload.underline!)
+  }
+  if (payload.textScaleX != null) {
+    format.setTextScaleX(payload.textScaleX!.toFloat())
+  }
+  if (payload.textScaleY != null) {
+    format.setTextScaleY(payload.textScaleY!.toFloat())
+  }
+  if (payload.letterSpacing != null) {
+    format.setLetterSpacing(payload.letterSpacing!.toFloat())
+  }
+  if (payload.lineSpacing != null) {
+    format.setLineSpacing(payload.lineSpacing!.toFloat())
+  }
+  if (payload.topPadding != null) {
+    format.setTopPadding(payload.topPadding!.toInt())
+  }
+  if (payload.leftPadding != null) {
+    format.setLeftPadding(payload.leftPadding!.toInt())
+  }
+  format.setAli(builtInAlignToNative(payload.align ?? null).toInt())
+  format.setStyle(builtInStyleToNative(payload.style ?? null).toInt())
+  if (payload.font != null) {
+    format.setFont(payload.font!.toInt())
+  }
+  if (payload.path != null) {
+    format.setPath(payload.path!)
+  }
+  return format
+}
+
+function createPrintTextFormats(row: AndroidBuiltInTableRow): PrintTextFormat[] {
+  const formats: PrintTextFormat[] = []
+  for (let index = 0; index < row.texts.length; index += 1) {
+    const source = row.formats == null ? null : row.formats![index]
+    formats.push(createPrintTextFormat(source ?? null))
+  }
+  return formats
+}
+
+function getStringArrayPayload(payload: UTSJSONObject, key: string): string[] {
+  const result: string[] = []
+  const source = payload.getArray(key)
+  if (source == null) return result
+  for (let index = 0; index < source!.length; index += 1) {
+    result.push(`${source![index]}`)
+  }
+  return result
+}
+
+function getIntArrayPayload(payload: UTSJSONObject, key: string): Int[] {
+  const result: Int[] = []
+  const source = payload.getArray(key)
+  if (source == null) return result
+  for (let index = 0; index < source!.length; index += 1) {
+    const value = source![index] as number
+    result.push(value.toInt())
+  }
+  return result
+}
+
+function getTextFormatPayload(payload: UTSJSONObject): BuiltInTextFormat {
+  const format: BuiltInTextFormat = {}
+  const textSize = payload.getNumber('textSize')
+  if (textSize != null) format.textSize = textSize!.toInt()
+  const underline = payload.getBoolean('underline')
+  if (underline != null) format.underline = underline!
+  const textScaleX = payload.getNumber('textScaleX')
+  if (textScaleX != null) format.textScaleX = textScaleX!.toDouble()
+  const textScaleY = payload.getNumber('textScaleY')
+  if (textScaleY != null) format.textScaleY = textScaleY!.toDouble()
+  const letterSpacing = payload.getNumber('letterSpacing')
+  if (letterSpacing != null) format.letterSpacing = letterSpacing!.toDouble()
+  const lineSpacing = payload.getNumber('lineSpacing')
+  if (lineSpacing != null) format.lineSpacing = lineSpacing!.toDouble()
+  const topPadding = payload.getNumber('topPadding')
+  if (topPadding != null) format.topPadding = topPadding!.toInt()
+  const leftPadding = payload.getNumber('leftPadding')
+  if (leftPadding != null) format.leftPadding = leftPadding!.toInt()
+  const align = payload.getString('align')
+  if (align != null) format.align = align! as BuiltInTextAlign
+  const style = payload.getString('style')
+  if (style != null) format.style = style! as BuiltInTextStyle
+  const font = payload.getNumber('font')
+  if (font != null) format.font = font!.toInt()
+  const path = payload.getString('path')
+  if (path != null) format.path = path!
+  return format
+}
+
+function getTextFormatsPayload(payload: UTSJSONObject): BuiltInTextFormat[] | null {
+  const source = payload.getArray('formats')
+  if (source == null) return null
+  const result: BuiltInTextFormat[] = []
+  for (let index = 0; index < source!.length; index += 1) {
+    const item = source![index] as UTSJSONObject
+    result.push(getTextFormatPayload(item))
+  }
+  return result
+}
+
+function normalizeBuiltInTableOptions(options: PrintBuiltInTableTextOptions): AndroidBuiltInTableOptions {
+  const rows: AndroidBuiltInTableRow[] = []
+  const sourceRows = options.getArray('rows')
+  if (sourceRows != null) {
+    for (let index = 0; index < sourceRows!.length; index += 1) {
+      const sourceRow = sourceRows![index] as UTSJSONObject
+      const formats = getTextFormatsPayload(sourceRow)
+      if (formats == null) {
+        rows.push({
+          texts: getStringArrayPayload(sourceRow, 'texts'),
+          weights: getIntArrayPayload(sourceRow, 'weights'),
+        })
+      }
+      else {
+        rows.push({
+          texts: getStringArrayPayload(sourceRow, 'texts'),
+          weights: getIntArrayPayload(sourceRow, 'weights'),
+          formats: formats!,
+        })
+      }
+    }
+  }
+  return {
+    rows,
+    autoOut: options.getBoolean('autoOut') ?? false,
+  }
+}
+
+function normalizeBuiltInLabelAction(payload: UTSJSONObject): AndroidBuiltInLabelAction {
+  const action: AndroidBuiltInLabelAction = {
+    type: payload.getString('type') ?? '',
+  }
+  const text = payload.getString('text')
+  if (text != null) action.text = text!
+  const format = payload.getJSON('format')
+  if (format != null) action.format = getTextFormatPayload(format!)
+  const content = payload.getString('content')
+  if (content != null) action.content = content!
+  const width = payload.getNumber('width')
+  if (width != null) action.width = width!.toInt()
+  const height = payload.getNumber('height')
+  if (height != null) action.height = height!.toInt()
+  const textPosition = payload.getNumber('textPosition')
+  if (textPosition != null) action.textPosition = textPosition!.toInt()
+  const align = payload.getString('align')
+  if (align != null) action.align = align! as BuiltInTextAlign
+  const symbology = payload.getString('symbology')
+  if (symbology != null) action.symbology = symbology! as BuiltInBarcodeSymbology
+  return action
+}
+
+function normalizeBuiltInLabelOptions(options: PrintBuiltInLabelOptions): AndroidBuiltInLabelOptions {
+  const actions: AndroidBuiltInLabelAction[] = []
+  const sourceActions = options.getArray('actions')
+  if (sourceActions != null) {
+    for (let index = 0; index < sourceActions!.length; index += 1) {
+      actions.push(normalizeBuiltInLabelAction(sourceActions![index] as UTSJSONObject))
+    }
+  }
+  return {
+    height: options.getNumber('height', 0).toInt(),
+    gap: options.getNumber('gap', 0).toInt(),
+    autoLocate: options.getBoolean('autoLocate') ?? false,
+    detectBeforeLocate: options.getBoolean('detectBeforeLocate') ?? false,
+    actions,
+  }
+}
+
+function printNoryoxLabelAction(service: IBinder, action: AndroidBuiltInLabelAction): Int {
+  if (action.type == 'text') {
+    if (action.text == null) {
+      return -1002
+    }
+    return printNoryoxText(service, {
+      text: action.text!,
+      format: action.format,
+    })
+  }
+  if (action.type == 'barcode') {
+    if (action.content == null || action.width == null || action.height == null) {
+      return -1002
+    }
+    return printNoryoxBarcode(service, {
+      content: action.content!,
+      width: action.width!,
+      height: action.height!,
+      textPosition: action.textPosition,
+      align: action.align,
+      symbology: action.symbology,
+    })
+  }
+  return -1015
 }
 
 function createWifiConnection(ip: string, port: number): PrinterConnection {
@@ -381,7 +885,7 @@ class PrinterGattCallback extends BluetoothGattCallback {
       gatt.discoverServices()
     }
     if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-      disconnectPrinter({})
+      disconnectPrinterInternal({})
     }
   }
 
@@ -430,7 +934,7 @@ class PrinterGattCallback extends BluetoothGattCallback {
   }
 }
 
-export const checkBuiltInPrinter: CheckBuiltInPrinter = function (options: CheckBuiltInPrinterOptions) {
+function checkBuiltInPrinterInternal(options: CheckBuiltInPrinterOptions) {
   if (isPackageInstalled(NORYOX_PACKAGE_NAME)) {
     options.success?.({
       available: true,
@@ -445,7 +949,7 @@ export const checkBuiltInPrinter: CheckBuiltInPrinter = function (options: Check
   runComplete(options.complete ?? null)
 }
 
-export const scanPrinters: ScanPrinters = function (options: ScanPrintersOptions) {
+function scanPrintersInternal(options: ScanPrintersOptions) {
   const adapter = getAdapter()
   if (adapter == null || !adapter.isEnabled()) {
     options.fail?.(createPrinterError(PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, 'Bluetooth is unavailable or disabled.'))
@@ -468,13 +972,9 @@ export const scanPrinters: ScanPrinters = function (options: ScanPrintersOptions
     const timeout = options.timeout ?? 10000
     if (timeout > 0) {
       Handler(Looper.getMainLooper()).postDelayed(() => {
-        stopScanPrinters({
-          success() {
-            options.success?.({ devices: scannedDevices })
-          },
-          fail: options.fail,
-          complete: options.complete,
-        })
+        stopScanPrinters()
+        options.success?.({ devices: scannedDevices })
+        runComplete(options.complete ?? null)
       }, timeout.toLong())
     }
   }
@@ -488,17 +988,15 @@ export const scanPrinters: ScanPrinters = function (options: ScanPrintersOptions
   runComplete(options.complete ?? null)
 }
 
-export const stopScanPrinters: StopScanPrinters = function (options: StopScanPrintersOptions) {
+export function stopScanPrinters() {
   if (scanner != null && scanCallback != null) {
     scanner!.stopScan(scanCallback)
   }
   scanner = null
   scanCallback = null
-  options.success?.()
-  runComplete(options.complete ?? null)
 }
 
-export const connectPrinter: ConnectPrinter = function (options: ConnectPrinterOptions) {
+function connectPrinterInternal(options: ConnectPrinterOptions) {
   closeWifiConnection()
 
   if (isNoryoxDeviceId(options.deviceId)) {
@@ -532,7 +1030,7 @@ export const connectPrinter: ConnectPrinter = function (options: ConnectPrinterO
   device.connectGatt(context, false, callback)
 }
 
-export const connectNet: ConnectNet = function (options: ConnectNetOptions) {
+function connectNetInternal(options: ConnectNetOptions) {
   const port = parsePrinterPort(options.port)
   if (options.ip.length == 0 || port <= 0) {
     options.fail?.(createPrinterError(PRINTER_ERROR_CONNECT_FAILED, 'Wi-Fi printer ip and port are required.'))
@@ -540,7 +1038,7 @@ export const connectNet: ConnectNet = function (options: ConnectNetOptions) {
     return
   }
 
-  disconnectPrinter({})
+  disconnectPrinterInternal({})
 
   Thread(() => {
     try {
@@ -565,7 +1063,7 @@ export const connectNet: ConnectNet = function (options: ConnectNetOptions) {
   }).start()
 }
 
-export const disconnectPrinter: DisconnectPrinter = function (options: DisconnectPrinterOptions) {
+function disconnectPrinterInternal(options: DisconnectPrinterOptions) {
   if (connectedPrinter != null && connectedPrinter!.deviceId == NORYOX_BUILT_IN_DEVICE_ID) {
     unbindNoryoxPrinter()
     connectedPrinter = null
@@ -584,11 +1082,6 @@ export const disconnectPrinter: DisconnectPrinter = function (options: Disconnec
   emitConnectState('disconnect', '', '')
   options.success?.()
   runComplete(options.complete ?? null)
-}
-
-export const getConnectedPrinter: GetConnectedPrinter = function (options: GetConnectedPrinterOptions) {
-  options.success?.(connectedPrinter == null ? createEmptyConnection() : connectedPrinter!)
-  options.complete?.()
 }
 
 function writeWifiBytes(bytes: number[], chunkSize: number, success: () => void, fail: (message: string) => void) {
@@ -680,86 +1173,329 @@ function getDefaultChunkSize(bytes: number[]): number {
   return connectedPrinter?.type == 'wifi' || connectedPrinter?.type == 'noryox' ? bytes.length : 20
 }
 
-export const scanBlue: ScanBlue = function (callback: (device: PrinterDevice) => void) {
-  scanPrinters({
-    timeout: 10000,
-    success(res) {
-      const latest = res.devices[res.devices.length - 1]
-      callback(latest)
-    },
+// ============================================================
+// Public API (v0.3.0+)
+// ============================================================
+
+export function createEscBuilder(): PrinterEscBuilder {
+  return new PrinterEscBuilder()
+}
+
+export function sendEsc(builder: PrinterEscBuilder): Promise<WriteDataResult> {
+  return new Promise<WriteDataResult>((resolve, reject) => {
+    const bytes = [...builder.bytes]
+    const chunkSize = getDefaultChunkSize(bytes)
+    const chunks = splitBytes(bytes, chunkSize)
+    writeBytes(bytes, chunkSize, () => {
+      resolve({ byteLength: bytes.length, chunkCount: chunks.length, complete: true, msg: 'ok' })
+    }, (message: string) => {
+      const deviceId = connectedPrinter == null ? '' : connectedPrinter!.deviceId
+      emitConnectState('connectFail', deviceId, message)
+      reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, message))
+    })
   })
 }
 
-export const stopScanBlue: StopScanBlue = function () {
-  stopScanPrinters({})
-}
-
-export const connectBlue: ConnectBlue = function (deviceId: string) {
-  connectPrinter({
-    deviceId,
-    fail(err) {
-      emitConnectState('connectFail', deviceId, err.errMsg)
-    },
-  })
-}
-
-export const disconnect: Disconnect = function () {
-  disconnectPrinter({})
-}
-
-export const isConnect: IsConnect = function () {
-  if (connectedPrinter?.type == 'wifi') {
-    return wifiSocket != null && wifiSocket!.isConnected() && !wifiSocket!.isClosed()
+class AndroidBuiltInPrinter {
+  private getService(): IBinder | null {
+    if (connectedPrinter?.type != 'noryox') return null
+    return noryoxPrinterService
   }
-  if (connectedPrinter?.type == 'noryox') {
-    return noryoxPrinterService != null
+
+  printText(text: string, format?: BuiltInTextFormat, textWidth?: Int, align?: BuiltInTextAlign, autoOut?: boolean) {
+    return new Promise<BuiltInPrinterResult>((resolve, reject) => {
+      if (text.length == 0) { reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in text is empty.')); return }
+      Thread(() => {
+        const service = this.getService()
+        if (service == null) { reject(createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.')); return }
+        try {
+          const noryoxFormat = createPrintTextFormat(format ?? null)
+          let code: Int
+          if (textWidth != null) {
+            code = transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_TEXT2, (data: Parcel) => {
+              data.writeString(text)
+              writePrintTextFormat(data, noryoxFormat)
+              data.writeInt(textWidth!.toInt())
+              data.writeInt(builtInAlignToNative(align ?? format?.align ?? null).toInt())
+            })
+          } else {
+            code = transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_TEXT, (data: Parcel) => {
+              data.writeString(text)
+              writePrintTextFormat(data, noryoxFormat)
+            })
+          }
+          if (code == 0 && autoOut == true) { code = printNoryoxEndAutoOut(service) }
+          const result = createBuiltInResult(code)
+          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
+        } catch (error) {
+          reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to print Noryox built-in text: ${error}`))
+        }
+      }).start()
+    })
   }
-  return connectedGatt != null && writeCharacteristic != null
+
+  printBarcode(content: string, width: Int, height: Int, textPosition?: Int, align?: BuiltInTextAlign, symbology?: BuiltInBarcodeSymbology, autoOut?: boolean) {
+    return new Promise<BuiltInPrinterResult>((resolve, reject) => {
+      if (content.length == 0 || width <= 0 || height <= 0) { reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in barcode params invalid.')); return }
+      Thread(() => {
+        const service = this.getService()
+        if (service == null) { reject(createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.')); return }
+        try {
+          const code = transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_BARCODE, (data: Parcel) => {
+            data.writeString(content)
+            data.writeInt(width.toInt())
+            data.writeInt(height.toInt())
+            data.writeInt((textPosition ?? 0).toInt())
+            data.writeInt(builtInAlignToNative(align ?? null).toInt())
+            data.writeInt(builtInBarcodeSymbologyToNative(symbology ?? null).toInt())
+          })
+          const finalCode = (code == 0 && autoOut == true) ? printNoryoxEndAutoOut(service) : code
+          const result = createBuiltInResult(finalCode)
+          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
+        } catch (error) {
+          reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to print Noryox built-in barcode: ${error}`))
+        }
+      }).start()
+    })
+  }
+
+  printQrCode(content: string, width: Int, height: Int, align?: BuiltInTextAlign, autoOut?: boolean) {
+    return new Promise<BuiltInPrinterResult>((resolve, reject) => {
+      if (content.length == 0 || width <= 0 || height <= 0) { reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in QR code params invalid.')); return }
+      Thread(() => {
+        const service = this.getService()
+        if (service == null) { reject(createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.')); return }
+        try {
+          const code = transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_QR_CODE, (data: Parcel) => {
+            data.writeString(content)
+            data.writeInt(width.toInt())
+            data.writeInt(height.toInt())
+            data.writeInt(builtInAlignToNative(align ?? null).toInt())
+          })
+          const finalCode = (code == 0 && autoOut == true) ? printNoryoxEndAutoOut(service) : code
+          const result = createBuiltInResult(finalCode)
+          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
+        } catch (error) {
+          reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to print Noryox built-in QR code: ${error}`))
+        }
+      }).start()
+    })
+  }
+
+  printImage(base64Str: string, type?: BuiltInImageType, align?: BuiltInTextAlign, autoOut?: boolean) {
+    return new Promise<BuiltInPrinterResult>((resolve, reject) => {
+      if (base64Str.length == 0) { reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in image base64Str is empty.')); return }
+      Thread(() => {
+        const bitmap = decodeBase64Bitmap(base64Str)
+        if (bitmap == null) { reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in image base64Str is not a valid bitmap.')); return }
+        const service = this.getService()
+        if (service == null) { reject(createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.')); return }
+        try {
+          const code = transactNoryoxInt(service, NORYOX_TRANSACTION_PRINT_BITMAP, (data: Parcel) => {
+            data.writeInt(1)
+            bitmap.writeToParcel(data, 0)
+            data.writeInt(type == 'grayscale' ? 1 : 0)
+            data.writeInt(builtInAlignToNative(align ?? null).toInt())
+          })
+          const finalCode = (code == 0 && autoOut == true) ? printNoryoxEndAutoOut(service) : code
+          const result = createBuiltInResult(finalCode)
+          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
+        } catch (error) {
+          reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to print Noryox built-in image: ${error}`))
+        }
+      }).start()
+    })
+  }
+
+  printLabel(height: Int, gap: Int, actions: AndroidBuiltInLabelAction[], autoLocate?: boolean, detectBeforeLocate?: boolean) {
+    return new Promise<BuiltInPrinterResult>((resolve, reject) => {
+      if (height <= 0 || gap < 0 || actions.length == 0) { rejectPrinterError(reject, createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in label params invalid.')); return }
+      Thread(() => {
+        const service = this.getService()
+        if (service == null) { rejectPrinterError(reject, createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.')); return }
+        try {
+          let code: Int = 0
+          if (detectBeforeLocate == true && !hasNoryoxLabelLearning(service)) {
+            code = printNoryoxLabelDetectAuto(service)
+            if (code != 0) {
+              rejectBuiltInStepError(reject, 'labelDetectAuto', code)
+              return
+            }
+          }
+          code = printNoryoxLabelLocate(service, height, gap, autoLocate == true)
+          if (code != 0) {
+            rejectBuiltInStepError(reject, autoLocate == true ? 'labelLocateAuto' : 'labelLocate', code)
+            return
+          }
+          for (let index = 0; index < actions.length; index += 1) {
+            code = printNoryoxLabelAction(service, actions[index])
+            if (code != 0) {
+              rejectBuiltInStepError(reject, `label action ${index + 1} (${actions[index].type})`, code)
+              return
+            }
+          }
+          code = printNoryoxLabelPrintEnd(service)
+          if (code != 0) {
+            rejectBuiltInStepError(reject, 'labelPrintEnd', code)
+            return
+          }
+          resolve(createBuiltInResult(code))
+        } catch (error) {
+          rejectPrinterError(reject, createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to print Noryox built-in label: ${error}`))
+        }
+      }).start()
+    })
+  }
+
+  printTable(rows: AndroidBuiltInTableRow[], autoOut?: boolean) {
+    return new Promise<boolean>((resolve, reject) => {
+      if (rows.length == 0) { reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in table rows are empty.')); return }
+      Thread(() => {
+        const service = this.getService()
+        if (service == null) { reject(createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.')); return }
+        try {
+          for (let index = 0; index < rows.length; index += 1) {
+            const row = rows[index]
+            if (row.texts.length == 0) { reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, `Built-in table row ${index + 1} has no columns.`)); return }
+            if (row.texts.length != row.weights.length) { reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, `Built-in table row ${index + 1} texts and weights mismatch.`)); return }
+            const result = printNoryoxTableText(service, row.texts, copyIntArray(row.weights), createPrintTextFormats(row))
+            if (result != 0) { reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Noryox printTableText failed with code ${result}: ${getBuiltInSdkResultMessage(result)}`)); return }
+          }
+          if (autoOut == true) {
+            const endResult = printNoryoxEndAutoOut(service)
+            if (endResult != 0) { reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Noryox printEndAutoOut failed with code ${endResult}: ${getBuiltInSdkResultMessage(endResult)}`)); return }
+          }
+          resolve(true)
+        } catch (error) {
+          reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to print Noryox built-in table: ${error}`))
+        }
+      }).start()
+    })
+  }
+
+  clearLabelLearning() {
+    return new Promise<BuiltInPrinterResult>((resolve, reject) => {
+      Thread(() => {
+        const service = this.getService()
+        if (service == null) { reject(createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.')); return }
+        try {
+          const result = createBuiltInResult(clearNoryoxLabelLearning(service))
+          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
+        } catch (error) {
+          reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to clear Noryox built-in label learning: ${error}`))
+        }
+      }).start()
+    })
+  }
 }
 
-export const writeData: WriteData = function (callback: WriteDataCallback | null) {
-  const bytes = commandBuilder.toBytes()
-  const chunkSize = getDefaultChunkSize(bytes)
-  const chunks = splitBytes(bytes, chunkSize)
-  writeBytes(bytes, chunkSize, () => {
-    callback?.({ byteLength: bytes.length, chunkCount: chunks.length, complete: true, msg: 'writeData complete' })
-  }, (message: string) => {
-    const deviceId = connectedPrinter == null ? '' : connectedPrinter!.deviceId
-    emitConnectState('connectFail', deviceId, message)
-    callback?.({ byteLength: bytes.length, chunkCount: chunks.length, complete: false, msg: message })
+export function getBuiltInPrinter(): AndroidBuiltInPrinter | null {
+  if (connectedPrinter?.type != 'noryox' || noryoxPrinterService == null) return null
+  return new AndroidBuiltInPrinter()
+}
+
+export function printBuiltInText(options: PrintBuiltInTextOptions): Promise<BuiltInPrinterResult> {
+  return new AndroidBuiltInPrinter().printText(options.text, options.format, options.textWidth, options.align, options.autoOut)
+}
+
+export function printBuiltInBarcode(options: PrintBuiltInBarcodeOptions): Promise<BuiltInPrinterResult> {
+  return new AndroidBuiltInPrinter().printBarcode(options.content, options.width, options.height, options.textPosition, options.align, options.symbology, options.autoOut)
+}
+
+export function printBuiltInQrCode(options: PrintBuiltInQrCodeOptions): Promise<BuiltInPrinterResult> {
+  return new AndroidBuiltInPrinter().printQrCode(options.content, options.width, options.height, options.align, options.autoOut)
+}
+
+export function printBuiltInImage(options: PrintBuiltInImageOptions): Promise<BuiltInPrinterResult> {
+  return new AndroidBuiltInPrinter().printImage(options.base64Str, options.type, options.align, options.autoOut)
+}
+
+export function printBuiltInLabel(options: PrintBuiltInLabelOptions): Promise<BuiltInPrinterResult> {
+  const payload = normalizeBuiltInLabelOptions(options)
+  return new AndroidBuiltInPrinter().printLabel(payload.height, payload.gap, payload.actions, payload.autoLocate, payload.detectBeforeLocate)
+}
+
+export function printBuiltInTable(options: PrintBuiltInTableTextOptions): Promise<boolean> {
+  const payload = normalizeBuiltInTableOptions(options)
+  return new AndroidBuiltInPrinter().printTable(payload.rows, payload.autoOut)
+}
+
+export function scanPrinters(options?: ScanPrintersSimpleOptions): Promise<ScanPrintersSuccess> {
+  return new Promise<ScanPrintersSuccess>((resolve, reject) => {
+    scanPrintersInternal({ timeout: options?.timeout ?? 10000, serviceUUIDs: options?.serviceUUIDs, success: (res: ScanPrintersSuccess) => { resolve(res) }, fail: (err: PrinterError) => { reject(err) } })
   })
 }
 
-export const onBlueStateChange: OnBlueStateChange = function (callback: BlueStateCallback) {
-  blueStateCallback = callback
+export function connectPrinter(options: ConnectPrinterSimpleOptions): Promise<PrinterConnection> {
+  return new Promise<PrinterConnection>((resolve, reject) => {
+    connectPrinterInternal({
+      deviceId: options.deviceId,
+      serviceUUIDs: options.serviceUUIDs,
+      writeCharacteristicUUIDs: options.writeCharacteristicUUIDs,
+      timeout: options.timeout,
+      success: (res: PrinterConnection) => { resolve(res) },
+      fail: (err: PrinterError) => { reject(err) },
+    })
+  })
 }
 
-export const onConnectStateChange: OnConnectStateChange = function (callback: ConnectStateCallback) {
+export function connectWifi(options: ConnectWifiSimpleOptions): Promise<PrinterConnection> {
+  return new Promise<PrinterConnection>((resolve, reject) => {
+    connectNetInternal({
+      ip: options.ip,
+      port: options.port,
+      timeout: options.timeout,
+      success: (res: PrinterConnection) => { resolve(res) },
+      fail: (err: PrinterError) => { reject(err) },
+    })
+  })
+}
+
+export function disconnectPrinter(): Promise<boolean> {
+  return new Promise<boolean>((resolve, reject) => {
+    disconnectPrinterInternal({ success: () => resolve(true), fail: (err: PrinterError) => { reject(err) } })
+  })
+}
+
+export function getConnectedPrinter(): PrinterConnection | null {
+  return connectedPrinter
+}
+
+export function checkBuiltInPrinter(): Promise<CheckBuiltInPrinterSuccess> {
+  return new Promise<CheckBuiltInPrinterSuccess>((resolve, reject) => {
+    checkBuiltInPrinterInternal({ success: (res: CheckBuiltInPrinterSuccess) => { resolve(res) }, fail: (err: PrinterError) => { reject(err) } })
+  })
+}
+
+export function printText(options: PrintTextSimpleOptions): Promise<WriteDataResult> {
+  return new Promise<WriteDataResult>((resolve, reject) => {
+    printTextInternal({
+      title: options.title,
+      lines: options.lines,
+      feed: options.feed,
+      cut: options.cut,
+      chunkSize: options.chunkSize,
+      success: () => resolve({ byteLength: 0, chunkCount: 0, complete: true, msg: 'ok' }),
+      fail: (err: PrinterError) => { reject(err) },
+    })
+  })
+}
+
+export function printEsc(bytes: number[], chunkSize?: number): Promise<WriteDataResult> {
+  return new Promise<WriteDataResult>((resolve, reject) => {
+    printEscInternal({ bytes, chunkSize, success: () => resolve({ byteLength: bytes.length, chunkCount: 1, complete: true, msg: 'ok' }), fail: (err: PrinterError) => { reject(err) } })
+  })
+}
+
+export function onConnectStateChange(callback: ConnectStateCallback) {
   connectStateCallback = callback
 }
 
-export const onDataReceive: OnDataReceive = function (callback: DataReceiveCallback) {
-  dataReceiveCallback = callback
-}
+// ============================================================
+// Internal helpers (non-exported — used by new API)
+// ============================================================
 
-export const clearCommandBuffer: ClearCommandBuffer = function () { commandBuilder.clearCommandBuffer() }
-export const escInitializePrinter: EscInitializePrinter = function () { commandBuilder.escInitializePrinter() }
-export const escJustification: EscJustificationCommand = function (position) { commandBuilder.escJustification(position) }
-export const escSetCharcterSize: EscSetCharcterSize = function (size) { commandBuilder.escSetCharcterSize(size) }
-export const escTurnEmphasizedMode: EscTurnEmphasizedMode = function (on) { commandBuilder.escTurnEmphasizedMode(on) }
-export const escCutPaper: EscCutPaper = function () { commandBuilder.escCutPaper() }
-export const escNewLine: EscNewLine = function () { commandBuilder.escNewLine() }
-export const addPrintAndFeedLines: AddPrintAndFeedLines = function (lines) { commandBuilder.addPrintAndFeedLines(lines) }
-export const escText: EscText = function (text) { commandBuilder.escText(text) }
-export const escTwoText58: EscTwoText58 = function (payload) { return buildTwoText58(payload) }
-export const escThreeText58: EscThreeText58 = function (payload) { return buildThreeText58(payload) }
-export const escFourText58: EscFourText58 = function (payload) { return buildFourText58(payload) }
-export const escQRCode: EscQRCode = function (payload) { commandBuilder.escQRCode(payload) }
-export const escImage: EscImage = function (payload) { commandBuilder.escImage(payload) }
-export const escStringCommand: EscStringCommand = function (command) { commandBuilder.escStringCommand(command) }
-export const escBytesCommand: EscBytesCommand = function (command) { commandBuilder.escBytesCommand(command) }
-
-export const printEsc: PrintEsc = function (options: PrintEscOptions) {
+function printEscInternal(options: PrintEscOptions) {
   if (options.bytes.length == 0) {
     options.fail?.(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'ESC payload is empty.'))
     runComplete(options.complete ?? null)
@@ -776,14 +1512,14 @@ export const printEsc: PrintEsc = function (options: PrintEscOptions) {
   })
 }
 
-export const printText: PrintText = function (options: PrintTextOptions) {
+function printTextInternal(options: PrintTextOptions) {
   const payload: ReceiptPayload = {
     title: options.title,
     lines: options.lines,
     feed: options.feed,
     cut: options.cut,
   }
-  printEsc({
+  printEscInternal({
     bytes: buildReceipt(payload),
     chunkSize: options.chunkSize,
     success: options.success,

@@ -1,4 +1,4 @@
-import type { EscImageParam, EscJustification, EscQRCodeParam, FourColumnText, ThreeColumnText, TwoColumnText } from '../interface.uts'
+import type { EscJustification, EscQRCodeParam, FourColumnText, ThreeColumnText, TwoColumnText } from '../interface.uts'
 
 export type ReceiptPayload = {
   title: string
@@ -84,7 +84,7 @@ export function escFourText58(payload: FourColumnText): string {
 }
 
 export class PrinterEscBuilder {
-  private bytes: number[] = []
+  bytes: number[] = []
 
   clearCommandBuffer() {
     this.bytes = []
@@ -132,10 +132,6 @@ export class PrinterEscBuilder {
     this.bytes.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30)
   }
 
-  escImage(_payload: EscImageParam) {
-    throw new Error('escImage requires platform image decoding before raster command generation.')
-  }
-
   escStringCommand(command: string) {
     this.bytes.push(...encodeAscii(command))
   }
@@ -144,10 +140,6 @@ export class PrinterEscBuilder {
     for (let index = 0; index < command.length; index += 1) {
       this.bytes.push(clampByte(command[index]))
     }
-  }
-
-  toBytes(): number[] {
-    return [...this.bytes]
   }
 }
 
@@ -171,5 +163,5 @@ export function buildReceipt(payload: ReceiptPayload): number[] {
     builder.escCutPaper()
   }
 
-  return builder.toBytes()
+  return [...builder.bytes]
 }

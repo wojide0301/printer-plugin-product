@@ -1,16 +1,13 @@
 import { defineConfig } from 'vitest/config'
+import AutoImport from 'unplugin-auto-import/vite'
 
 export default defineConfig({
-  server: {
-    hmr: false,
-  },
+  plugins: [
+    AutoImport({
+      imports: ['vue', '@vueuse/core', 'uni-app'],
+    }),
+  ],
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-  },
-  resolve: {
-    alias: {
-      '@': new URL('./src', import.meta.url).pathname,
-    },
+    globals: true,
   },
 })

@@ -3,7 +3,8 @@ import { usePrinter } from '@/composables/usePrinter'
 
 definePage({
   name: 'printer',
-  layout: 'tabbar',
+  type: 'home',
+  layout: 'default',
   style: {
     navigationBarTitleText: '打印机插件',
   },
@@ -23,11 +24,18 @@ const {
   loading,
   refreshConnected,
   scan,
+  scanBuiltIn,
   statusText,
   stopScan,
   wifiIp,
   wifiPort,
 } = usePrinter()
+
+const segmentedOptions = [
+  { title: '蓝牙', value: 'bluetooth' },
+  { title: 'Wi-Fi', value: 'wifi' },
+  { title: '内置', value: 'noryox' },
+]
 
 onMounted(() => {
   bindEvents()
@@ -61,7 +69,7 @@ function openCommandTests() {
 
       <demo-block title="基础功能" transparent>
         <view class="px-4 pb-3">
-          <wd-segmented v-model:value="connectionType" :options="['bluetooth', 'wifi']" />
+          <wd-segmented v-model:value="connectionType" :options="segmentedOptions" />
         </view>
         <view v-if="connectionType === 'wifi'" class="px-4 pb-3">
           <wd-cell-group border custom-class="rounded-2! overflow-hidden">
@@ -76,6 +84,9 @@ function openCommandTests() {
           <wd-button v-if="connectionType === 'bluetooth'" type="warning" plain block :disabled="!loading" @click="stopScan">
             停止扫描
           </wd-button>
+          <wd-button v-if="connectionType === 'noryox'" block type="primary" :loading="loading" @click="scanBuiltIn">
+            检测内置打印机
+          </wd-button>
           <wd-button v-if="connectionType === 'wifi'" block type="primary" :loading="loading" @click="connectWifi">
             连接 Wi-Fi
           </wd-button>
@@ -88,7 +99,7 @@ function openCommandTests() {
         </view>
       </demo-block>
 
-      <demo-block v-if="connectionType === 'bluetooth'" title="发现的设备" transparent>
+      <demo-block v-if="connectionType !== 'wifi'" title="发现的设备" transparent>
         <wd-cell-group border custom-class="rounded-2! overflow-hidden">
           <wd-cell
             v-for="device in devices"
