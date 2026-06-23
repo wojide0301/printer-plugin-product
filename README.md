@@ -201,7 +201,7 @@ Status OK
 | `pnpm build:app` | 构建 App 产物 |
 | `pnpm type-check` | TypeScript 类型检查 |
 | `pnpm lint` | ESLint 检查 |
-| `pnpm test` | Vitest 测试（22 个用例） |
+| `pnpm test` | Vitest 测试（23 个用例） |
 | `pnpm commit` | 使用 git-cz 提交 |
 
 ## 权限说明
