@@ -13,9 +13,13 @@ export interface PrinterCommandTestContext {
   printEsc: (bytes: number[], chunkSize?: number) => Promise<void>
   printBuiltInText: (options: any) => Promise<any>
   printBuiltInBarcode: (options: any) => Promise<any>
+  printBuiltInQrCode: (options: any) => Promise<any>
   printBuiltInImage: (options: any) => Promise<any>
   printBuiltInLabel: (options: any) => Promise<any>
   printBuiltInTable: (options: any) => Promise<any>
+  printBuiltInTwoColumn: (options: any) => Promise<any>
+  printBuiltInThreeColumn: (options: any) => Promise<any>
+  printBuiltInFourColumn: (options: any) => Promise<any>
 }
 
 export interface PrinterCommandTest {
@@ -29,9 +33,13 @@ const SAMPLE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQ
 const BUILT_IN_COMMAND_IDS = new Set([
   'built-in-text',
   'built-in-barcode',
+  'built-in-qr-code',
   'built-in-image',
   'built-in-label',
   'built-in-table',
+  'built-in-two-column',
+  'built-in-three-column',
+  'built-in-four-column',
 ])
 
 export function isBuiltInPrinterCommand(command: PrinterCommandTest) {
@@ -258,6 +266,21 @@ export const printerCommandTests: PrinterCommandTest[] = [
     },
   },
   {
+    id: 'built-in-qr-code',
+    title: '内置二维码打印',
+    description: '测试 Noryox 内置打印机 printQrCode 原生二维码指令。',
+    async run(ctx) {
+      if (!ctx.builtIn) throw new Error('该测试仅支持 Noryox 内置打印机')
+      await ctx.printBuiltInQrCode({
+        content: 'https://example.com/yuntu-printer',
+        width: 300,
+        height: 300,
+        align: 'center',
+        autoOut: true,
+      })
+    },
+  },
+  {
     id: 'built-in-image',
     title: '内置图片打印',
     description: '测试 Noryox 内置打印机 printImage 原生图片指令。',
@@ -304,6 +327,48 @@ export const printerCommandTests: PrinterCommandTest[] = [
           { texts: ['商品', '数量', '单价', '金额'], weights, formats: [headerFormat, headerFormat, headerFormat, headerFormat] },
           { texts: ['Coffee', '2', '12.00', '24.00'], weights, formats: [leftFormat, centerFormat, centerFormat, centerFormat] },
         ],
+        autoOut: true,
+      })
+    },
+  },
+  {
+    id: 'built-in-two-column',
+    title: '内置两列文本',
+    description: '测试 Noryox 内置打印机 printBuiltInTwoColumn 绝对定位排版。',
+    async run(ctx) {
+      if (!ctx.builtIn) throw new Error('该测试仅支持 Noryox 内置打印机')
+      await ctx.printBuiltInTwoColumn({
+        leftText: 'Total:',
+        rightText: '9998.00',
+        autoOut: true,
+      })
+    },
+  },
+  {
+    id: 'built-in-three-column',
+    title: '内置三列文本',
+    description: '测试 Noryox 内置打印机 printBuiltInThreeColumn 绝对定位排版。',
+    async run(ctx) {
+      if (!ctx.builtIn) throw new Error('该测试仅支持 Noryox 内置打印机')
+      await ctx.printBuiltInThreeColumn({
+        leftText: 'Coffee',
+        middleText: 'x2',
+        rightText: '24.00',
+        autoOut: true,
+      })
+    },
+  },
+  {
+    id: 'built-in-four-column',
+    title: '内置四列文本',
+    description: '测试 Noryox 内置打印机 printBuiltInFourColumn 绝对定位排版。',
+    async run(ctx) {
+      if (!ctx.builtIn) throw new Error('该测试仅支持 Noryox 内置打印机')
+      await ctx.printBuiltInFourColumn({
+        oneText: 'Coffee',
+        twoText: '2',
+        threeText: '12.00',
+        fourText: '24.00',
         autoOut: true,
       })
     },

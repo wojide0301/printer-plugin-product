@@ -1,4 +1,4 @@
-import type { EscJustification, EscQRCodeParam, FourColumnText, ThreeColumnText, TwoColumnText } from '../interface.uts'
+import type { EscJustification, EscQRCodeParam, FourColumnText, ThreeColumnText } from '../interface.uts'
 
 export type ReceiptPayload = {
   title: string
@@ -63,24 +63,16 @@ function padColumns(values: string[], widths: number[]): string {
   return result.trimEnd()
 }
 
-export function dotFromMm(mm: number, dpi: 200 | 300): number {
-  return Math.trunc(mm * (dpi == 200 ? 8 : 12))
-}
-
-export function escTwoText58(payload: TwoColumnText): string {
-  let spaces = 32 - displayWidth(payload.left) - displayWidth(payload.right)
-  if (spaces < 1) {
-    spaces = 1
-  }
-  return `${payload.left}${repeatSpaces(spaces)}${payload.right}`
-}
-
 export function escThreeText58(payload: ThreeColumnText): string {
   return padColumns([payload.left, payload.middle, payload.right], [22, 6, 0])
 }
 
 export function escFourText58(payload: FourColumnText): string {
   return padColumns([payload.one, payload.two, payload.three, payload.four], [10, 10, 10, 0])
+}
+
+export function dotFromMm(mm: number, dpi: 200 | 300): number {
+  return Math.trunc(mm * (dpi == 200 ? 8 : 12))
 }
 
 export class PrinterEscBuilder {
@@ -134,6 +126,66 @@ export class PrinterEscBuilder {
 
   escStringCommand(command: string) {
     this.bytes.push(...encodeAscii(command))
+  }
+
+  private writeEscAbsolutePosition(dots: number) {
+    const pos = dots > 0 ? dots : 0
+    this.bytes.push(0x1B, 0x24, pos & 0xFF, (pos >> 8) & 0xFF)
+  }
+
+  /**
+   * ESC $ two-column layout with absolute-positioned right column.
+   * Matches `Utils.printTwoColumn(title, content)` behavior.
+   * @param leftText   Left-aligned text
+   * @param rightText  Right-column text, positioned from paper right edge
+   * @param paperWidthDots  Paper width in dots, default 384 (58mm @ 203dpi)
+   * @param charWidthDots   Character width in dots, default 12
+   */
+  escTwoColumn(leftText: string, rightText: string, paperWidthDots: number = 384, charWidthDots: number = 12) {
+    this.bytes.push(...encodeAscii(leftText))
+    this.writeEscAbsolutePosition(paperWidthDots - rightText.length * charWidthDots)
+    this.bytes.push(...encodeAscii(rightText))
+    this.bytes.push(0x0A)
+  }
+
+  /**
+   * ESC $ three-column layout.
+   * Layout: left → ESC $ middlePos → middle → ESC $ rightPos → right → \\n
+   * @param leftText    Left-aligned text
+   * @param middleText  Middle column text
+   * @param rightText   Right column text
+   * @param middlePositionDots  ESC $ position for middle column, default 200
+   * @param rightPositionDots   ESC $ position for right column, default 384
+   */
+  escThreeColumn(leftText: string, middleText: string, rightText: string, middlePositionDots: number = 200, rightPositionDots: number = 384) {
+    this.bytes.push(...encodeAscii(leftText))
+    this.writeEscAbsolutePosition(middlePositionDots)
+    this.bytes.push(...encodeAscii(middleText))
+    this.writeEscAbsolutePosition(rightPositionDots)
+    this.bytes.push(...encodeAscii(rightText))
+    this.bytes.push(0x0A)
+  }
+
+  /**
+   * ESC $ four-column layout.
+   * Layout: col1 → ESC $ pos2 → col2 → ESC $ pos3 → col3 → ESC $ pos4 → col4 → \\n
+   * @param oneText   Column 1 text
+   * @param twoText   Column 2 text
+   * @param threeText Column 3 text
+   * @param fourText  Column 4 text
+   * @param twoPositionDots    ESC $ position for column 2, default 140
+   * @param threePositionDots  ESC $ position for column 3, default 260
+   * @param fourPositionDots   ESC $ position for column 4, default 384
+   */
+  escFourColumn(oneText: string, twoText: string, threeText: string, fourText: string, twoPositionDots: number = 140, threePositionDots: number = 260, fourPositionDots: number = 384) {
+    this.bytes.push(...encodeAscii(oneText))
+    this.writeEscAbsolutePosition(twoPositionDots)
+    this.bytes.push(...encodeAscii(twoText))
+    this.writeEscAbsolutePosition(threePositionDots)
+    this.bytes.push(...encodeAscii(threeText))
+    this.writeEscAbsolutePosition(fourPositionDots)
+    this.bytes.push(...encodeAscii(fourText))
+    this.bytes.push(0x0A)
   }
 
   escBytesCommand(command: number[]) {

@@ -3,10 +3,14 @@ import {
   getBuiltInPrinter,
   getConnectedPrinter,
   printBuiltInBarcode,
+  printBuiltInFourColumn,
   printBuiltInImage,
   printBuiltInLabel,
+  printBuiltInQrCode,
   printBuiltInTable,
   printBuiltInText,
+  printBuiltInThreeColumn,
+  printBuiltInTwoColumn,
   printEsc,
   printText,
 } from '@/uni_modules/yuntu-printer-uts'
@@ -80,9 +84,13 @@ async function runCommand(commandId: string, options: { batch?: boolean } = {}) 
       printEsc: async (bytes: number[], chunkSize?: number) => { await printEsc(bytes, chunkSize) },
       printBuiltInText,
       printBuiltInBarcode,
+      printBuiltInQrCode,
       printBuiltInImage,
       printBuiltInLabel,
       printBuiltInTable,
+      printBuiltInTwoColumn,
+      printBuiltInThreeColumn,
+      printBuiltInFourColumn,
     })
     loading.value = false
     runningId.value = ''

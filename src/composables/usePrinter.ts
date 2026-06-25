@@ -6,16 +6,18 @@ import {
   connectWifi,
   createEscBuilder,
   disconnectPrinter,
-  sendEsc,
   getConnectedPrinter,
   onConnectStateChange,
   printText,
   scanPrinters,
+  sendEsc,
   stopScanPrinters,
 } from '@/uni_modules/yuntu-printer-uts'
 
 export type PrinterConnectionType = 'bluetooth' | 'wifi' | 'noryox'
 export type PrinterDeviceView = PrinterDevice
+export type PrinterLinkStatus = 'connected' | 'disconnected' | 'connecting' | 'connectFail'
+export type PrinterDeviceStatusMap = Record<string, PrinterLinkStatus>
 
 const BLUETOOTH_SCAN_PERMISSION = 'android.permission.BLUETOOTH_SCAN'
 const BLUETOOTH_CONNECT_PERMISSION = 'android.permission.BLUETOOTH_CONNECT'
@@ -39,12 +41,15 @@ const bluetoothPermissionExplainMap = {
 
 export function usePrinter() {
   const devices = ref<PrinterDeviceView[]>([])
+  const deviceStatuses = ref<PrinterDeviceStatusMap>({})
   const connectedDeviceId = ref('')
   const connectionType = ref<PrinterConnectionType>('bluetooth')
   const loading = ref(false)
   const lastEvent = ref('等待操作')
+  const pendingDeviceId = ref('')
   const wifiIp = ref('192.168.100.110')
   const wifiPort = ref('8000')
+  const isConnected = computed(() => connectedDeviceId.value.length > 0)
   const statusText = computed(() => {
     if (connectedDeviceId.value) {
       return `已连接 ${connectedDeviceId.value}`
@@ -54,7 +59,28 @@ export function usePrinter() {
     }
     return '未连接打印机'
   })
-  const isConnected = computed(() => connectedDeviceId.value.length > 0)
+
+  function setDeviceStatus(deviceId: string, status: PrinterLinkStatus) {
+    if (!deviceId) {
+      return
+    }
+    deviceStatuses.value = {
+      ...deviceStatuses.value,
+      [deviceId]: status,
+    }
+  }
+
+  function resetConnectionStatuses() {
+    const next: PrinterDeviceStatusMap = {}
+    for (const deviceId of Object.keys(deviceStatuses.value)) {
+      next[deviceId] = 'disconnected'
+    }
+    deviceStatuses.value = next
+  }
+
+  function resolveEventDeviceId(deviceId?: string) {
+    return deviceId || connectedDeviceId.value || pendingDeviceId.value
+  }
 
   function getBluetoothPermissions(): BluetoothPermission[] {
     const systemInfo = uni.getSystemInfoSync() as UniApp.GetSystemInfoResult & {
@@ -97,6 +123,18 @@ export function usePrinter() {
       title: err.errMsg ?? '打印机操作失败',
       icon: 'none',
     })
+  }
+
+  function mergeDevices(nextDevices: PrinterDeviceView[]) {
+    const byTypeAndDeviceId = new Map<string, PrinterDeviceView>()
+    for (const device of [...devices.value, ...nextDevices]) {
+      const type = device.type ?? 'bluetooth'
+      byTypeAndDeviceId.set(`${type}:${device.deviceId}`, {
+        ...device,
+        type,
+      })
+    }
+    devices.value = Array.from(byTypeAndDeviceId.values())
   }
 
   async function scanBuiltIn() {
@@ -142,12 +180,58 @@ export function usePrinter() {
 
     try {
       const res = await scanPrinters({ timeout: 10000 })
-      devices.value = res.devices
+      devices.value = res.devices.map(device => ({
+        ...device,
+        type: device.type ?? 'bluetooth',
+      }))
     }
     catch (err) {
       showError(err as PrinterError)
     }
     finally {
+      loading.value = false
+    }
+  }
+
+  async function searchAvailablePrinters() {
+    connectionType.value = 'bluetooth'
+    loading.value = true
+    devices.value = []
+
+    const bluetoothDevices: PrinterDeviceView[] = []
+    const builtInDevices: PrinterDeviceView[] = []
+    const hasPermission = await ensureBluetoothPermission()
+
+    if (hasPermission) {
+      try {
+        const res = await scanPrinters({ timeout: 5000 })
+        bluetoothDevices.push(...res.devices.map(device => ({
+          ...device,
+          type: device.type ?? 'bluetooth' as PrinterConnectionType,
+        })))
+      }
+      catch (err) {
+        showError(err as PrinterError)
+      }
+    }
+
+    try {
+      const systemInfo = uni.getSystemInfoSync()
+      if (systemInfo.uniPlatform === 'app' && systemInfo.platform === 'android') {
+        const res = await checkBuiltInPrinter()
+        if (res.available && res.device) {
+          builtInDevices.push(res.device)
+        }
+      }
+    }
+    catch (err) {
+      showError(err as PrinterError)
+    }
+    finally {
+      mergeDevices([...bluetoothDevices, ...builtInDevices])
+      lastEvent.value = devices.value.length > 0
+        ? `已搜索到 ${devices.value.length} 台打印机`
+        : '未搜索到打印机'
       loading.value = false
     }
   }
@@ -159,40 +243,62 @@ export function usePrinter() {
 
   async function connect(deviceId: string) {
     loading.value = true
+    pendingDeviceId.value = deviceId
+    setDeviceStatus(deviceId, 'connecting')
     try {
       const res = await connectPrinter({ deviceId })
       connectedDeviceId.value = res.deviceId
       connectionType.value = res.type ?? 'bluetooth'
+      resetConnectionStatuses()
+      setDeviceStatus(res.deviceId, 'connected')
       lastEvent.value = 'connectSuccess'
       uni.showToast({ title: '连接成功', icon: 'success' })
+      return res
     }
     catch (err) {
+      setDeviceStatus(deviceId, 'connectFail')
       showError(err as PrinterError)
+      return null
     }
     finally {
+      pendingDeviceId.value = ''
       loading.value = false
     }
+  }
+
+  async function connectDevice(device: PrinterDeviceView) {
+    connectionType.value = device.type ?? 'bluetooth'
+    return connect(device.deviceId)
   }
 
   async function connectWifiHandler() {
     if (!wifiIp.value || !wifiPort.value) {
       showError({ errMsg: '请输入 Wi-Fi 打印机 IP 和端口' })
-      return
+      return null
     }
 
     connectionType.value = 'wifi'
     loading.value = true
+    const deviceId = `${wifiIp.value}:${wifiPort.value}`
+    pendingDeviceId.value = deviceId
+    setDeviceStatus(deviceId, 'connecting')
     try {
       const res = await connectWifi({ ip: wifiIp.value, port: wifiPort.value })
       connectedDeviceId.value = res.deviceId
       connectionType.value = 'wifi'
+      resetConnectionStatuses()
+      setDeviceStatus(res.deviceId, 'connected')
       lastEvent.value = 'connectSuccess'
       uni.showToast({ title: '连接成功', icon: 'success' })
+      return res
     }
     catch (err) {
+      setDeviceStatus(deviceId, 'connectFail')
       showError(err as PrinterError)
+      return null
     }
     finally {
+      pendingDeviceId.value = ''
       loading.value = false
     }
   }
@@ -212,6 +318,8 @@ export function usePrinter() {
       else if (conn.deviceId) {
         connectionType.value = 'bluetooth'
       }
+      resetConnectionStatuses()
+      setDeviceStatus(conn.deviceId, 'connected')
     }
   }
 
@@ -220,6 +328,7 @@ export function usePrinter() {
     try {
       await disconnectPrinter()
       connectedDeviceId.value = ''
+      resetConnectionStatuses()
       lastEvent.value = 'disconnect'
       uni.showToast({ title: '已断开', icon: 'success' })
     }
@@ -234,13 +343,20 @@ export function usePrinter() {
   function bindEvents() {
     onConnectStateChange((payload) => {
       lastEvent.value = payload.state
-      if (payload.state === 'connectSuccess' && payload.deviceId) {
-        connectedDeviceId.value = payload.deviceId
+      const eventDeviceId = resolveEventDeviceId(payload.deviceId)
+      if (payload.state === 'connectSuccess' && eventDeviceId) {
+        connectedDeviceId.value = eventDeviceId
+        resetConnectionStatuses()
+        setDeviceStatus(eventDeviceId, 'connected')
       }
       if (payload.state === 'disconnect') {
         connectedDeviceId.value = ''
+        resetConnectionStatuses()
       }
       if (payload.state === 'connectFail') {
+        if (eventDeviceId) {
+          setDeviceStatus(eventDeviceId, 'connectFail')
+        }
         showError({ errMsg: payload.errMsg ?? '连接失败' })
       }
     })
@@ -297,7 +413,9 @@ export function usePrinter() {
     connectionType,
     connectedDeviceId,
     connect,
+    connectDevice,
     connectWifi: connectWifiHandler,
+    deviceStatuses,
     devices,
     disconnect,
     isConnected,
@@ -308,6 +426,7 @@ export function usePrinter() {
     refreshConnected,
     scan,
     scanBuiltIn,
+    searchAvailablePrinters,
     statusText,
     stopScan,
     wifiIp,

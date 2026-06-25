@@ -5,7 +5,16 @@ declare module '@/uni_modules/yuntu-printer-uts' {
   export type PrinterConnectionType = 'bluetooth' | 'wifi' | 'noryox'
   export type BuiltInTextAlign = 'left' | 'center' | 'right'
   export type BuiltInTextStyle = 'normal' | 'bold' | 'italic' | 'boldItalic'
-  export type BuiltInBarcodeSymbology = 'code128' | 'code39' | 'code93' | 'upcA' | 'upcE' | 'ean13' | 'ean8' | 'itf' | 'codabar'
+  export type BuiltInBarcodeSymbology =
+    | 'code128'
+    | 'code39'
+    | 'code93'
+    | 'upcA'
+    | 'upcE'
+    | 'ean13'
+    | 'ean8'
+    | 'itf'
+    | 'codabar'
   export type BuiltInImageType = 'blackWhite' | 'grayscale'
 
   export interface PrinterDevice {
@@ -131,6 +140,34 @@ declare module '@/uni_modules/yuntu-printer-uts' {
     autoOut?: boolean
   }
 
+  export interface PrintBuiltInTwoColumnOptions {
+    leftText: string
+    rightText: string
+    paperWidthDots?: number
+    charWidthDots?: number
+    autoOut?: boolean
+  }
+
+  export interface PrintBuiltInThreeColumnOptions {
+    leftText: string
+    middleText: string
+    rightText: string
+    middlePositionDots?: number
+    rightPositionDots?: number
+    autoOut?: boolean
+  }
+
+  export interface PrintBuiltInFourColumnOptions {
+    oneText: string
+    twoText: string
+    threeText: string
+    fourText: string
+    twoPositionDots?: number
+    threePositionDots?: number
+    fourPositionDots?: number
+    autoOut?: boolean
+  }
+
   export interface BuiltInTextFormat {
     textSize?: number
     underline?: boolean
@@ -177,16 +214,50 @@ declare module '@/uni_modules/yuntu-printer-uts' {
     addPrintAndFeedLines(lines: number): void
     escText(text: string): void
     escQRCode(payload: EscQRCodeParam): void
+    escTwoColumn(leftText: string, rightText: string, paperWidthDots?: number, charWidthDots?: number): void
+    escThreeColumn(leftText: string, middleText: string, rightText: string, middlePositionDots?: number, rightPositionDots?: number): void
+    escFourColumn(oneText: string, twoText: string, threeText: string, fourText: string, twoPositionDots?: number, threePositionDots?: number, fourPositionDots?: number): void
     escStringCommand(command: string): void
     escBytesCommand(command: number[]): void
   }
 
   export class BuiltInPrinter {
-    printText(text: string, format?: BuiltInTextFormat, textWidth?: number, align?: BuiltInTextAlign, autoOut?: boolean): Promise<BuiltInPrinterResult>
-    printBarcode(content: string, width: number, height: number, textPosition?: number, align?: BuiltInTextAlign, symbology?: BuiltInBarcodeSymbology, autoOut?: boolean): Promise<BuiltInPrinterResult>
-    printQrCode(content: string, width: number, height: number, align?: BuiltInTextAlign, autoOut?: boolean): Promise<BuiltInPrinterResult>
-    printImage(base64Str: string, type?: BuiltInImageType, align?: BuiltInTextAlign, autoOut?: boolean): Promise<BuiltInPrinterResult>
-    printLabel(height: number, gap: number, actions: BuiltInLabelAction[], autoLocate?: boolean, detectBeforeLocate?: boolean): Promise<BuiltInPrinterResult>
+    printText(
+      text: string,
+      format?: BuiltInTextFormat,
+      textWidth?: number,
+      align?: BuiltInTextAlign,
+      autoOut?: boolean,
+    ): Promise<BuiltInPrinterResult>
+    printBarcode(
+      content: string,
+      width: number,
+      height: number,
+      textPosition?: number,
+      align?: BuiltInTextAlign,
+      symbology?: BuiltInBarcodeSymbology,
+      autoOut?: boolean,
+    ): Promise<BuiltInPrinterResult>
+    printQrCode(
+      content: string,
+      width: number,
+      height: number,
+      align?: BuiltInTextAlign,
+      autoOut?: boolean,
+    ): Promise<BuiltInPrinterResult>
+    printImage(
+      base64Str: string,
+      type?: BuiltInImageType,
+      align?: BuiltInTextAlign,
+      autoOut?: boolean,
+    ): Promise<BuiltInPrinterResult>
+    printLabel(
+      height: number,
+      gap: number,
+      actions: BuiltInLabelAction[],
+      autoLocate?: boolean,
+      detectBeforeLocate?: boolean,
+    ): Promise<BuiltInPrinterResult>
     printTable(rows: BuiltInTableRow[], autoOut?: boolean): Promise<boolean>
     clearLabelLearning(): Promise<BuiltInPrinterResult>
   }
@@ -204,13 +275,31 @@ declare module '@/uni_modules/yuntu-printer-uts' {
   export function disconnectPrinter(): Promise<boolean>
   export function getConnectedPrinter(): PrinterConnection | null
   export function checkBuiltInPrinter(): Promise<CheckBuiltInPrinterSuccess>
+  export function testPrint(options: ConnectPrinterSimpleOptions): Promise<WriteDataResult>
   export function printText(options: PrintTextSimpleOptions): Promise<WriteDataResult>
   export function printEsc(bytes: number[], chunkSize?: number): Promise<WriteDataResult>
   export function printBuiltInText(options: PrintBuiltInTextOptions): Promise<BuiltInPrinterResult>
-  export function printBuiltInBarcode(options: PrintBuiltInBarcodeOptions): Promise<BuiltInPrinterResult>
-  export function printBuiltInQrCode(options: PrintBuiltInQrCodeOptions): Promise<BuiltInPrinterResult>
-  export function printBuiltInImage(options: PrintBuiltInImageOptions): Promise<BuiltInPrinterResult>
-  export function printBuiltInLabel(options: PrintBuiltInLabelOptions): Promise<BuiltInPrinterResult>
+  export function printBuiltInBarcode(
+    options: PrintBuiltInBarcodeOptions,
+  ): Promise<BuiltInPrinterResult>
+  export function printBuiltInQrCode(
+    options: PrintBuiltInQrCodeOptions,
+  ): Promise<BuiltInPrinterResult>
+  export function printBuiltInImage(
+    options: PrintBuiltInImageOptions,
+  ): Promise<BuiltInPrinterResult>
+  export function printBuiltInLabel(
+    options: PrintBuiltInLabelOptions,
+  ): Promise<BuiltInPrinterResult>
   export function printBuiltInTable(options: PrintBuiltInTableOptions): Promise<boolean>
+  export function printBuiltInTwoColumn(
+    options: PrintBuiltInTwoColumnOptions,
+  ): Promise<BuiltInPrinterResult>
+  export function printBuiltInThreeColumn(
+    options: PrintBuiltInThreeColumnOptions,
+  ): Promise<BuiltInPrinterResult>
+  export function printBuiltInFourColumn(
+    options: PrintBuiltInFourColumnOptions,
+  ): Promise<BuiltInPrinterResult>
   export function onConnectStateChange(callback: (payload: ConnectStatePayload) => void): void
 }

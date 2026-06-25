@@ -24,9 +24,13 @@ function createCommandContext() {
     printEsc: vi.fn().mockResolvedValue(undefined),
     printBuiltInText: vi.fn().mockResolvedValue({ code: 0, ok: true, message: '成功' }),
     printBuiltInBarcode: vi.fn().mockResolvedValue({ code: 0, ok: true, message: '成功' }),
+    printBuiltInQrCode: vi.fn().mockResolvedValue({ code: 0, ok: true, message: '成功' }),
     printBuiltInImage: vi.fn().mockResolvedValue({ code: 0, ok: true, message: '成功' }),
     printBuiltInLabel: vi.fn().mockResolvedValue({ code: 0, ok: true, message: '成功' }),
     printBuiltInTable: vi.fn().mockResolvedValue(undefined),
+    printBuiltInTwoColumn: vi.fn().mockResolvedValue({ code: 0, ok: true, message: '成功' }),
+    printBuiltInThreeColumn: vi.fn().mockResolvedValue({ code: 0, ok: true, message: '成功' }),
+    printBuiltInFourColumn: vi.fn().mockResolvedValue({ code: 0, ok: true, message: '成功' }),
   }
 }
 
@@ -47,9 +51,13 @@ describe('printerCommandTests', () => {
       'print-esc',
       'built-in-text',
       'built-in-barcode',
+      'built-in-qr-code',
       'built-in-image',
       'built-in-label',
       'built-in-table',
+      'built-in-two-column',
+      'built-in-three-column',
+      'built-in-four-column',
     ])
   })
 
@@ -152,9 +160,13 @@ describe('printerCommandTests', () => {
     expect(printerCommandTests.filter(isBuiltInPrinterCommand).map(item => item.id)).toEqual([
       'built-in-text',
       'built-in-barcode',
+      'built-in-qr-code',
       'built-in-image',
       'built-in-label',
       'built-in-table',
+      'built-in-two-column',
+      'built-in-three-column',
+      'built-in-four-column',
     ])
   })
 
@@ -196,5 +208,41 @@ describe('printerCommandTests', () => {
       autoLocate: false,
       detectBeforeLocate: false,
     })
+  })
+
+  it('uses top-level built-in commands for qr code and column tests', async () => {
+    const ctx = createCommandContext()
+
+    await printerCommandTests.find(item => item.id === 'built-in-qr-code')?.run(ctx)
+    await printerCommandTests.find(item => item.id === 'built-in-two-column')?.run(ctx)
+    await printerCommandTests.find(item => item.id === 'built-in-three-column')?.run(ctx)
+    await printerCommandTests.find(item => item.id === 'built-in-four-column')?.run(ctx)
+
+    expect(ctx.printBuiltInQrCode).toHaveBeenCalledWith({
+      content: 'https://example.com/yuntu-printer',
+      width: 300,
+      height: 300,
+      align: 'center',
+      autoOut: true,
+    })
+    expect(ctx.printBuiltInTwoColumn).toHaveBeenCalledWith({
+      leftText: 'Total:',
+      rightText: '9998.00',
+      autoOut: true,
+    })
+    expect(ctx.printBuiltInThreeColumn).toHaveBeenCalledWith({
+      leftText: 'Coffee',
+      middleText: 'x2',
+      rightText: '24.00',
+      autoOut: true,
+    })
+    expect(ctx.printBuiltInFourColumn).toHaveBeenCalledWith({
+      oneText: 'Coffee',
+      twoText: '2',
+      threeText: '12.00',
+      fourText: '24.00',
+      autoOut: true,
+    })
+    expect(ctx.sendEsc).not.toHaveBeenCalled()
   })
 })

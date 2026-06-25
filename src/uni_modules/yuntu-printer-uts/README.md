@@ -19,12 +19,12 @@
 
 ## 平台支持
 
-| 平台 | 支持情况 | 说明 |
-| --- | --- | --- |
-| Android App | 支持 | BLE 通过 Bluetooth API，Wi-Fi 通过 TCP Socket，Noryox 通过 AIDL。 |
-| iOS App | 支持 | BLE 通过 CoreBluetooth，Wi-Fi 通过 TCP Stream。内置打印机不可用。 |
-| H5 | 不支持 | UTS 原生插件能力不支持 H5。 |
-| 小程序 | 不支持 | UTS 原生插件能力不支持小程序。 |
+| 平台        | 支持情况 | 说明                                                              |
+| ----------- | -------- | ----------------------------------------------------------------- |
+| Android App | 支持     | BLE 通过 Bluetooth API，Wi-Fi 通过 TCP Socket，Noryox 通过 AIDL。 |
+| iOS App     | 支持     | BLE 通过 CoreBluetooth，Wi-Fi 通过 TCP Stream。内置打印机不可用。 |
+| H5          | 不支持   | UTS 原生插件能力不支持 H5。                                       |
+| 小程序      | 不支持   | UTS 原生插件能力不支持小程序。                                    |
 
 ## 权限配置
 
@@ -158,8 +158,19 @@ await printBuiltInBarcode({
   symbology: 'code128',
   autoOut: true,
 })
-await printBuiltInQrCode({ content: '123456789', width: 300, height: 300, align: 'center', autoOut: true })
-await printBuiltInImage({ base64Str: 'data:image/png;base64,...', type: 'blackWhite', align: 'center', autoOut: true })
+await printBuiltInQrCode({
+  content: '123456789',
+  width: 300,
+  height: 300,
+  align: 'center',
+  autoOut: true,
+})
+await printBuiltInImage({
+  base64Str: 'data:image/png;base64,...',
+  type: 'blackWhite',
+  align: 'center',
+  autoOut: true,
+})
 ```
 
 文本、条码、二维码、图片和表格方法均支持 `autoOut` 自动走纸出票。自定义字库可通过 `format.font = 5` 和 `format.path` 设置。
@@ -179,6 +190,54 @@ await printBuiltInTable({
 })
 ```
 
+### 多列文本打印（ESC $ 绝对定位）
+
+通过 ESC/POS `ESC $` 绝对定位指令实现精确的多列对齐，效果等价于 SDK 的 `Utils.printTwoColumn`。适用于 Noryox 内置打印机；BLE / Wi-Fi 打印机通过 `EscBuilder` 调用 `escTwoColumn` / `escThreeColumn` / `escFourColumn` 后 `sendEsc()` 即可。
+
+```ts
+import {
+  printBuiltInTwoColumn,
+  printBuiltInThreeColumn,
+  printBuiltInFourColumn,
+} from '@/uni_modules/yuntu-printer-uts'
+
+// 两列
+await printBuiltInTwoColumn({
+  leftText: 'Total:',
+  rightText: '9998.00',
+  autoOut: true,
+})
+
+// 三列 — middlePositionDots / rightPositionDots 指定各列起始位置（默认 200 / 384）
+await printBuiltInThreeColumn({
+  leftText: 'Coffee',
+  middleText: 'x2',
+  rightText: '24.00',
+})
+
+// 四列 — twoPositionDots / threePositionDots / fourPositionDots 指定列位置（默认 140 / 260 / 384）
+await printBuiltInFourColumn({
+  oneText: 'Coffee',
+  twoText: '2',
+  threeText: '12.00',
+  fourText: '24.00',
+})
+```
+
+默认按 58mm 纸宽（384 点）计算列位置。使用 80mm 纸时传入更大的位置值（如 576）。
+
+**BLE / Wi-Fi 多列示例**（通过 EscBuilder）：
+
+```ts
+const esc = createEscBuilder()
+esc.escTwoColumn('Total:', '9998.00')
+esc.escThreeColumn('Item', 'Qty', 'Price', 200, 384)
+esc.escFourColumn('A', '2', '10', '20.00', 140, 260, 384)
+esc.addPrintAndFeedLines(3)
+esc.escCutPaper()
+await sendEsc(esc)
+```
+
 ### 标签打印
 
 ```ts
@@ -187,7 +246,15 @@ await printBuiltInLabel({
   gap: 16,
   actions: [
     { type: 'text', text: '\nModel:\t\tNB55', format: { textSize: 24 } },
-    { type: 'barcode', content: '1234567890987654321', width: 320, height: 90, textPosition: 2, align: 'left', symbology: 'code128' },
+    {
+      type: 'barcode',
+      content: '1234567890987654321',
+      width: 320,
+      height: 90,
+      textPosition: 2,
+      align: 'left',
+      symbology: 'code128',
+    },
   ],
   autoLocate: false,
   detectBeforeLocate: false,
@@ -199,7 +266,7 @@ await printBuiltInLabel({
 ```ts
 import { printEsc } from '@/uni_modules/yuntu-printer-uts'
 
-await printEsc([0x1B, 0x40, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x0A])
+await printEsc([0x1b, 0x40, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x0a])
 ```
 
 ## 事件监听
@@ -217,77 +284,91 @@ onConnectStateChange(({ state, deviceId, errMsg }) => {
 
 ### 连接与状态
 
-| API | 签名 |
-| --- | --- |
-| `scanPrinters(options?)` | `Promise<{ devices: PrinterDevice[] }>` |
-| `stopScanPrinters()` | `void` |
-| `connectPrinter(options)` | `Promise<PrinterConnection>` |
-| `connectWifi(options)` | `Promise<PrinterConnection>` |
-| `disconnectPrinter()` | `Promise<boolean>` |
-| `getConnectedPrinter()` | `PrinterConnection \| null` |
-| `checkBuiltInPrinter()` | `Promise<{ available, device? }>` |
-| `onConnectStateChange(cb)` | `void` |
+| API                        | 签名                                    |
+| -------------------------- | --------------------------------------- |
+| `scanPrinters(options?)`   | `Promise<{ devices: PrinterDevice[] }>` |
+| `stopScanPrinters()`       | `void`                                  |
+| `connectPrinter(options)`  | `Promise<PrinterConnection>`            |
+| `connectWifi(options)`     | `Promise<PrinterConnection>`            |
+| `disconnectPrinter()`      | `Promise<boolean>`                      |
+| `getConnectedPrinter()`    | `PrinterConnection \| null`             |
+| `checkBuiltInPrinter()`    | `Promise<{ available, device? }>`       |
+| `testPrint(options)`       | `Promise<WriteDataResult>`              |
+| `onConnectStateChange(cb)` | `void`                                  |
 
 ### 打印
 
-| API | 签名 |
-| --- | --- |
-| `printText(options)` | `Promise<WriteDataResult>` |
-| `printEsc(bytes, chunkSize?)` | `Promise<WriteDataResult>` |
-| `createEscBuilder()` | `EscBuilder` |
-| `sendEsc(builder)` | `Promise<WriteDataResult>` |
-| `getBuiltInPrinter()` | `BuiltInPrinter \| null` |
-| `printBuiltInText(options)` | `Promise<BuiltInPrinterResult>` |
-| `printBuiltInBarcode(options)` | `Promise<BuiltInPrinterResult>` |
-| `printBuiltInQrCode(options)` | `Promise<BuiltInPrinterResult>` |
-| `printBuiltInImage(options)` | `Promise<BuiltInPrinterResult>` |
-| `printBuiltInLabel(options)` | `Promise<BuiltInPrinterResult>` |
-| `printBuiltInTable(options)` | `Promise<boolean>` |
+| API                               | 签名                               |
+| --------------------------------- | --------------------------------- |
+| `printText(options)`              | `Promise<WriteDataResult>`      |
+| `printEsc(bytes, chunkSize?)`     | `Promise<WriteDataResult>`      |
+| `createEscBuilder()`              | `EscBuilder`                    |
+| `sendEsc(builder)`                | `Promise<WriteDataResult>`      |
+| `getBuiltInPrinter()`             | `BuiltInPrinter \| null`        |
+| `printBuiltInText(options)`       | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInBarcode(options)`    | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInQrCode(options)`     | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInImage(options)`      | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInLabel(options)`      | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInTable(options)`      | `Promise<boolean>`              |
+| `printBuiltInTwoColumn(options)`  | `Promise<BuiltInPrinterResult>` |
+| `printBuiltInThreeColumn(options)`| `Promise<BuiltInPrinterResult>` |
+| `printBuiltInFourColumn(options)` | `Promise<BuiltInPrinterResult>` |
 
 ### EscBuilder 方法
 
 `EscBuilder` 方法会修改内部 `bytes` 缓冲区；调用 `sendEsc(builder)` 发送到已连接打印机。
 
-| 方法 | 说明 |
-| --- | --- |
-| `clearCommandBuffer()` | 清空指令缓冲区 |
-| `escInitializePrinter()` | ESC @ 初始化打印机 |
-| `escJustification(p)` | 对齐：`'left'` \| `'center'` \| `'right'` |
-| `escSetCharcterSize(s)` | 字符大小：`1` 或 `2` |
-| `escTurnEmphasizedMode(on)` | 开/关加粗 |
-| `escCutPaper()` | GS V 切纸 |
-| `escNewLine()` | LF 换行 |
-| `addPrintAndFeedLines(n)` | ESC d 走纸 n 行 |
-| `escText(s)` | 追加 ASCII 文本 |
-| `escQRCode({ content, size })` | GS ( k 二维码 |
-| `escStringCommand(command)` | 追加原始字符串命令 |
-| `escBytesCommand(command)` | 追加原始字节命令 |
+| 方法                           | 说明                                      |
+| ------------------------------ | ----------------------------------------- |
+| `clearCommandBuffer()`         | 清空指令缓冲区                            |
+| `escInitializePrinter()`       | ESC @ 初始化打印机                        |
+| `escJustification(p)`          | 对齐：`'left'` \| `'center'` \| `'right'` |
+| `escSetCharcterSize(s)`        | 字符大小：`1` 或 `2`                      |
+| `escTurnEmphasizedMode(on)`    | 开/关加粗                                 |
+| `escCutPaper()`                | GS V 切纸                                 |
+| `escNewLine()`                 | LF 换行                                   |
+| `addPrintAndFeedLines(n)`      | ESC d 走纸 n 行                           |
+| `escText(s)`                   | 追加 ASCII 文本                           |
+| `escQRCode({ content, size })` | GS ( k 二维码                             |
+| `escTwoColumn(l, r, ...)`      | ESC $ 两栏精确定位                       |
+| `escThreeColumn(l, m, r, ...)` | ESC $ 三栏精确定位                       |
+| `escFourColumn(a, b, c, d, ...)` | ESC $ 四栏精确定位                       |
+| `escStringCommand(command)`    | 追加原始字符串命令                        |
+| `escBytesCommand(command)`     | 追加原始字节命令                          |
 
 ### BuiltInPrinter 方法
 
 `BuiltInPrinter` 是兼容对象 API；新代码优先使用上方顶层 `printBuiltIn*` 方法。
 
-| 方法 | 返回 |
-| --- | --- |
-| `printText(text, format?, textWidth?, align?, autoOut?)` | `Promise<BuiltInPrinterResult>` |
+| 方法                                                              | 返回                            |
+| ----------------------------------------------------------------- | ------------------------------- |
+| `printText(text, format?, textWidth?, align?, autoOut?)`          | `Promise<BuiltInPrinterResult>` |
 | `printBarcode(content, w, h, pos?, align?, symbology?, autoOut?)` | `Promise<BuiltInPrinterResult>` |
-| `printQrCode(content, w, h, align?, autoOut?)` | `Promise<BuiltInPrinterResult>` |
-| `printImage(base64, type?, align?, autoOut?)` | `Promise<BuiltInPrinterResult>` |
-| `printLabel(height, gap, actions, autoLocate?, detect?)` | `Promise<BuiltInPrinterResult>` |
-| `printTable(rows, autoOut?)` | `Promise<boolean>` |
-| `clearLabelLearning()` | `Promise<BuiltInPrinterResult>` |
+| `printQrCode(content, w, h, align?, autoOut?)`                    | `Promise<BuiltInPrinterResult>` |
+| `printImage(base64, type?, align?, autoOut?)`                     | `Promise<BuiltInPrinterResult>` |
+| `printLabel(height, gap, actions, autoLocate?, detect?)`          | `Promise<BuiltInPrinterResult>` |
+| `printTable(rows, autoOut?)`                                      | `Promise<boolean>`              |
+| `clearLabelLearning()`                                            | `Promise<BuiltInPrinterResult>` |
 
 ## 类型说明
 
 ```ts
 type PrinterDevice = {
-  deviceId: string; name: string; rssi: number
-  serviceUUIDs: string[]; type?: 'bluetooth' | 'wifi' | 'noryox'
+  deviceId: string
+  name: string
+  rssi: number
+  serviceUUIDs: string[]
+  type?: 'bluetooth' | 'wifi' | 'noryox'
 }
 
 type PrinterConnection = {
-  deviceId: string; name: string; serviceUUID: string
-  writeCharacteristicUUID: string; ip?: string; port?: number
+  deviceId: string
+  name: string
+  serviceUUID: string
+  writeCharacteristicUUID: string
+  ip?: string
+  port?: number
   type?: 'bluetooth' | 'wifi' | 'noryox'
 }
 
@@ -297,22 +378,22 @@ type WriteDataResult = { byteLength: number; chunkCount: number; complete?: bool
 
 ## 错误码
 
-| 错误码 | 说明 |
-| --- | --- |
-| `1001` | 蓝牙不可用或未开启 |
-| `1002` | 蓝牙权限未授予 |
-| `1003` | 扫描失败 |
-| `1004` | 未找到设备 |
-| `1005` | 连接失败 |
-| `1006` | 未找到蓝牙服务 |
-| `1007` | 未找到可写特征值 |
-| `1008` | 打印机未连接 |
-| `1009` | 写入失败 |
+| 错误码 | 说明                 |
+| ------ | -------------------- |
+| `1001` | 蓝牙不可用或未开启   |
+| `1002` | 蓝牙权限未授予       |
+| `1003` | 扫描失败             |
+| `1004` | 未找到设备           |
+| `1005` | 连接失败             |
+| `1006` | 未找到蓝牙服务       |
+| `1007` | 未找到可写特征值     |
+| `1008` | 打印机未连接         |
+| `1009` | 写入失败             |
 | `1010` | 打印数据为空或不合法 |
-| `1011` | 当前平台不支持 |
-| `1012` | 内置打印机不可用 |
+| `1011` | 当前平台不支持       |
+| `1012` | 内置打印机不可用     |
 | `1013` | 内置打印服务绑定失败 |
-| `1014` | 内置打印服务未连接 |
+| `1014` | 内置打印服务未连接   |
 
 ## 注意事项
 

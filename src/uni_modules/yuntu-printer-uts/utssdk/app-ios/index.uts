@@ -359,6 +359,18 @@ export function sendEsc(builder: PrinterEscBuilder): Promise<WriteDataResult> {
     })
   })
 }
+function buildTestPrintEsc(): PrinterEscBuilder {
+  const esc = createEscBuilder()
+  esc.clearCommandBuffer()
+  esc.escInitializePrinter()
+  esc.escText('YUNTU PRINTER')
+  esc.escNewLine()
+  esc.escText('Fluent ESC/POS API')
+  esc.escNewLine()
+  esc.addPrintAndFeedLines(3)
+  esc.escCutPaper()
+  return esc
+}
 export function getBuiltInPrinter(): null { return null }
 function rejectBuiltInUnavailable<T>(): Promise<T> {
   return new Promise<T>((_resolve, reject) => {
@@ -415,6 +427,38 @@ export function getConnectedPrinter(): PrinterConnection | null { return connect
 export function checkBuiltInPrinter(): Promise<CheckBuiltInPrinterSuccess> {
   return new Promise<CheckBuiltInPrinterSuccess>((resolve, reject) => {
     checkBuiltInPrinterInternal({ success: (res: CheckBuiltInPrinterSuccess) => { resolve(res) }, fail: (err: PrinterError) => { reject(err) } })
+  })
+}
+export function testPrint(options: ConnectPrinterSimpleOptions): Promise<WriteDataResult> {
+  return new Promise<WriteDataResult>((resolve, reject) => {
+    connectPrinterInternal({
+      deviceId: options.deviceId,
+      serviceUUIDs: options.serviceUUIDs,
+      writeCharacteristicUUIDs: options.writeCharacteristicUUIDs,
+      timeout: options.timeout,
+      success: (_connection: PrinterConnection) => {
+        const bytes = [...buildTestPrintEsc().bytes]
+        const chunkSize = getDefaultChunkSize(bytes)
+        const chunks = splitBytes(bytes, chunkSize)
+        printEscInternal({
+          bytes,
+          chunkSize,
+          success: () => {
+            disconnectPrinterInternal({
+              success: () => resolve({ byteLength: bytes.length, chunkCount: chunks.length, complete: true, msg: 'ok' }),
+              fail: (_err: PrinterError) => resolve({ byteLength: bytes.length, chunkCount: chunks.length, complete: true, msg: 'ok' }),
+            })
+          },
+          fail: (err: PrinterError) => {
+            disconnectPrinterInternal({
+              success: () => reject(err),
+              fail: (_disconnectErr: PrinterError) => reject(err),
+            })
+          },
+        })
+      },
+      fail: (err: PrinterError) => { reject(err) },
+    })
   })
 }
 export function printText(options: PrintTextSimpleOptions): Promise<WriteDataResult> {

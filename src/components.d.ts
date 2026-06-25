@@ -11,9 +11,12 @@ declare module 'vue' {
     WdButton: typeof import('@wot-ui/ui/components/wd-button/wd-button.vue')['default']
     WdCell: typeof import('@wot-ui/ui/components/wd-cell/wd-cell.vue')['default']
     WdCellGroup: typeof import('@wot-ui/ui/components/wd-cell-group/wd-cell-group.vue')['default']
+    WdForm: typeof import('@wot-ui/ui/components/wd-form/wd-form.vue')['default']
+    WdFormItem: typeof import('@wot-ui/ui/components/wd-form-item/wd-form-item.vue')['default']
     WdGap: typeof import('@wot-ui/ui/components/wd-gap/wd-gap.vue')['default']
     WdInput: typeof import('@wot-ui/ui/components/wd-input/wd-input.vue')['default']
-    WdSegmented: typeof import('@wot-ui/ui/components/wd-segmented/wd-segmented.vue')['default']
+    WdRadio: typeof import('@wot-ui/ui/components/wd-radio/wd-radio.vue')['default']
+    WdRadioGroup: typeof import('@wot-ui/ui/components/wd-radio-group/wd-radio-group.vue')['default']
     WdTabbar: typeof import('@wot-ui/ui/components/wd-tabbar/wd-tabbar.vue')['default']
     WdTabbarItem: typeof import('@wot-ui/ui/components/wd-tabbar-item/wd-tabbar-item.vue')['default']
   }

@@ -43,7 +43,6 @@ export type ConnectStatePayload = {
 }
 
 export type EscQRCodeParam = { content: string, size: number }
-export type TwoColumnText = { left: string, right: string }
 export type ThreeColumnText = { left: string, middle: string, right: string }
 export type FourColumnText = { one: string, two: string, three: string, four: string }
 export type BlueStateCallback = (on: boolean) => void
@@ -82,6 +81,9 @@ export type PrintBuiltInQrCodeOptions = { content: string, width: Int, height: I
 export type PrintBuiltInImageOptions = { base64Str: string, type?: BuiltInImageType, align?: BuiltInTextAlign, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
 export type PrintBuiltInTableTextOptions = UTSJSONObject
 export type PrintBuiltInLabelOptions = UTSJSONObject
+export type PrintBuiltInTwoColumnOptions = { leftText: string, rightText: string, paperWidthDots?: Int, charWidthDots?: Int, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintBuiltInThreeColumnOptions = { leftText: string, middleText: string, rightText: string, middlePositionDots?: Int, rightPositionDots?: Int, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintBuiltInFourColumnOptions = { oneText: string, twoText: string, threeText: string, fourText: string, twoPositionDots?: Int, threePositionDots?: Int, fourPositionDots?: Int, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
 
 // ---- public API signatures ----
 
@@ -95,6 +97,7 @@ export type ConnectWifi = (options: ConnectWifiSimpleOptions) => Promise<Printer
 export type DisconnectPrinter = () => Promise<boolean>
 export type GetConnectedPrinter = () => PrinterConnection | null
 export type CheckBuiltInPrinter = () => Promise<CheckBuiltInPrinterSuccess>
+export type TestPrint = (options: ConnectPrinterSimpleOptions) => Promise<WriteDataResult>
 export type PrintText = (options: PrintTextSimpleOptions) => Promise<WriteDataResult>
 export type PrintEsc = (bytes: number[], chunkSize?: number) => Promise<WriteDataResult>
 export type PrintBuiltInText = (options: PrintBuiltInTextOptions) => Promise<BuiltInPrinterResult>
@@ -103,4 +106,7 @@ export type PrintBuiltInQrCode = (options: PrintBuiltInQrCodeOptions) => Promise
 export type PrintBuiltInImage = (options: PrintBuiltInImageOptions) => Promise<BuiltInPrinterResult>
 export type PrintBuiltInLabel = (options: PrintBuiltInLabelOptions) => Promise<BuiltInPrinterResult>
 export type PrintBuiltInTable = (options: PrintBuiltInTableTextOptions) => Promise<boolean>
+export type PrintBuiltInTwoColumn = (options: PrintBuiltInTwoColumnOptions) => Promise<BuiltInPrinterResult>
+export type PrintBuiltInThreeColumn = (options: PrintBuiltInThreeColumnOptions) => Promise<BuiltInPrinterResult>
+export type PrintBuiltInFourColumn = (options: PrintBuiltInFourColumnOptions) => Promise<BuiltInPrinterResult>
 export type OnConnectStateChange = (callback: ConnectStateCallback) => void

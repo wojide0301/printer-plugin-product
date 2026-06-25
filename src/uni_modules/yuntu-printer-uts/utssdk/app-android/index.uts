@@ -12,7 +12,7 @@ import { PrintTextFormat } from 'net.nyx.printerservice.print'
 import { splitBytes } from '../common/chunk.uts'
 import { buildReceipt, PrinterEscBuilder } from '../common/esc.uts'
 import type { ReceiptPayload } from '../common/esc.uts'
-import type { BlueStateCallback, BuiltInBarcodeSymbology, BuiltInImageType, BuiltInPrinterResult, BuiltInTextAlign, BuiltInTextFormat, BuiltInTextStyle, CheckBuiltInPrinterOptions, CheckBuiltInPrinterSuccess, ConnectNetOptions, ConnectPrinterOptions, ConnectPrinterSimpleOptions, ConnectStateCallback, ConnectWifiSimpleOptions, DataReceiveCallback, DisconnectPrinterOptions, PrintBuiltInBarcodeOptions, PrintBuiltInImageOptions, PrintBuiltInLabelOptions, PrintBuiltInQrCodeOptions, PrintBuiltInTableTextOptions, PrintBuiltInTextOptions, PrintEscOptions, PrintTextOptions, PrintTextSimpleOptions, PrinterConnection, PrinterDevice, PrinterError, ScanPrintersOptions, ScanPrintersSimpleOptions, ScanPrintersSuccess, WriteDataResult } from '../interface.uts'
+import type { BlueStateCallback, BuiltInBarcodeSymbology, BuiltInImageType, BuiltInPrinterResult, BuiltInTextAlign, BuiltInTextFormat, BuiltInTextStyle, CheckBuiltInPrinterOptions, CheckBuiltInPrinterSuccess, ConnectNetOptions, ConnectPrinterOptions, ConnectPrinterSimpleOptions, ConnectStateCallback, ConnectWifiSimpleOptions, DataReceiveCallback, DisconnectPrinterOptions, PrintBuiltInBarcodeOptions, PrintBuiltInFourColumnOptions, PrintBuiltInImageOptions, PrintBuiltInLabelOptions, PrintBuiltInQrCodeOptions, PrintBuiltInTableTextOptions, PrintBuiltInTextOptions, PrintBuiltInThreeColumnOptions, PrintBuiltInTwoColumnOptions, PrintEscOptions, PrintTextOptions, PrintTextSimpleOptions, PrinterConnection, PrinterDevice, PrinterError, ScanPrintersOptions, ScanPrintersSimpleOptions, ScanPrintersSuccess, WriteDataResult } from '../interface.uts'
 import { createPrinterError, PRINTER_ERROR_BLUETOOTH_UNAVAILABLE, PRINTER_ERROR_BUILT_IN_UNAVAILABLE, PRINTER_ERROR_CHARACTERISTIC_NOT_FOUND, PRINTER_ERROR_CONNECT_FAILED, PRINTER_ERROR_DEVICE_NOT_FOUND, PRINTER_ERROR_INVALID_PAYLOAD, PRINTER_ERROR_NOT_CONNECTED, PRINTER_ERROR_PERMISSION_DENIED, PRINTER_ERROR_SCAN_FAILED, PRINTER_ERROR_SERVICE_BIND_FAILED, PRINTER_ERROR_SERVICE_NOT_CONNECTED, PRINTER_ERROR_SERVICE_NOT_FOUND, PRINTER_ERROR_WRITE_FAILED } from '../unierror.uts'
 
 const DEFAULT_WRITE_CHARACTERISTIC_UUIDS = [
@@ -1196,6 +1196,19 @@ export function sendEsc(builder: PrinterEscBuilder): Promise<WriteDataResult> {
   })
 }
 
+function buildTestPrintEsc(): PrinterEscBuilder {
+  const esc = createEscBuilder()
+  esc.clearCommandBuffer()
+  esc.escInitializePrinter()
+  esc.escText('YUNTU PRINTER')
+  esc.escNewLine()
+  esc.escText('Fluent ESC/POS API')
+  esc.escNewLine()
+  esc.addPrintAndFeedLines(3)
+  esc.escCutPaper()
+  return esc
+}
+
 class AndroidBuiltInPrinter {
   private getService(): IBinder | null {
     if (connectedPrinter?.type != 'noryox') return null
@@ -1420,6 +1433,107 @@ export function printBuiltInTable(options: PrintBuiltInTableTextOptions): Promis
   return new AndroidBuiltInPrinter().printTable(payload.rows, payload.autoOut)
 }
 
+export function printBuiltInTwoColumn(options: PrintBuiltInTwoColumnOptions): Promise<BuiltInPrinterResult> {
+  return new Promise<BuiltInPrinterResult>((resolve, reject) => {
+    if (options.leftText.length == 0 && options.rightText.length == 0) {
+      reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in twoColumn texts are empty.'))
+      return
+    }
+    Thread(() => {
+      const service = noryoxPrinterService
+      if (service == null) {
+        reject(createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.'))
+        return
+      }
+      try {
+        const esc = createEscBuilder()
+        esc.escTwoColumn(options.leftText, options.rightText, (options.paperWidthDots ?? 384).toInt(), (options.charWidthDots ?? 12).toInt())
+        const response = printNoryoxEscposData(service, bytesToNative(esc.bytes))
+        if (response != null && response.size > 0) {
+          emitDataReceive(bytesFromNative(response))
+        }
+        if (options.autoOut == true) {
+          const endResult = printNoryoxEndAutoOut(service)
+          const result = createBuiltInResult(endResult)
+          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
+          return
+        }
+        resolve(createBuiltInResult(0))
+      } catch (error) {
+        reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to print Noryox built-in twoColumn: ${error}`))
+      }
+    }).start()
+  })
+}
+
+export function printBuiltInThreeColumn(options: PrintBuiltInThreeColumnOptions): Promise<BuiltInPrinterResult> {
+  return new Promise<BuiltInPrinterResult>((resolve, reject) => {
+    if (options.leftText.length == 0 && options.middleText.length == 0 && options.rightText.length == 0) {
+      reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in threeColumn texts are empty.'))
+      return
+    }
+    Thread(() => {
+      const service = noryoxPrinterService
+      if (service == null) {
+        reject(createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.'))
+        return
+      }
+      try {
+        const esc = createEscBuilder()
+        esc.escThreeColumn(options.leftText, options.middleText, options.rightText,
+          (options.middlePositionDots ?? 200).toInt(), (options.rightPositionDots ?? 384).toInt())
+        const response = printNoryoxEscposData(service, bytesToNative(esc.bytes))
+        if (response != null && response.size > 0) {
+          emitDataReceive(bytesFromNative(response))
+        }
+        if (options.autoOut == true) {
+          const endResult = printNoryoxEndAutoOut(service)
+          const result = createBuiltInResult(endResult)
+          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
+          return
+        }
+        resolve(createBuiltInResult(0))
+      } catch (error) {
+        reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to print Noryox built-in threeColumn: ${error}`))
+      }
+    }).start()
+  })
+}
+
+export function printBuiltInFourColumn(options: PrintBuiltInFourColumnOptions): Promise<BuiltInPrinterResult> {
+  return new Promise<BuiltInPrinterResult>((resolve, reject) => {
+    if (options.oneText.length == 0 && options.twoText.length == 0 && options.threeText.length == 0 && options.fourText.length == 0) {
+      reject(createPrinterError(PRINTER_ERROR_INVALID_PAYLOAD, 'Built-in fourColumn texts are empty.'))
+      return
+    }
+    Thread(() => {
+      const service = noryoxPrinterService
+      if (service == null) {
+        reject(createPrinterError(PRINTER_ERROR_SERVICE_NOT_CONNECTED, 'Noryox printer service is not connected.'))
+        return
+      }
+      try {
+        const esc = createEscBuilder()
+        esc.escFourColumn(options.oneText, options.twoText, options.threeText, options.fourText,
+          (options.twoPositionDots ?? 140).toInt(), (options.threePositionDots ?? 260).toInt(), (options.fourPositionDots ?? 384).toInt())
+        const response = printNoryoxEscposData(service, bytesToNative(esc.bytes))
+        if (response != null && response.size > 0) {
+          emitDataReceive(bytesFromNative(response))
+        }
+        if (options.autoOut == true) {
+          const endResult = printNoryoxEndAutoOut(service)
+          const result = createBuiltInResult(endResult)
+          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
+          return
+        }
+        resolve(createBuiltInResult(0))
+      } catch (error) {
+        reject(createPrinterError(PRINTER_ERROR_WRITE_FAILED, `Failed to print Noryox built-in fourColumn: ${error}`))
+      }
+    }).start()
+  })
+}
+
 export function scanPrinters(options?: ScanPrintersSimpleOptions): Promise<ScanPrintersSuccess> {
   return new Promise<ScanPrintersSuccess>((resolve, reject) => {
     scanPrintersInternal({ timeout: options?.timeout ?? 10000, serviceUUIDs: options?.serviceUUIDs, success: (res: ScanPrintersSuccess) => { resolve(res) }, fail: (err: PrinterError) => { reject(err) } })
@@ -1464,6 +1578,39 @@ export function getConnectedPrinter(): PrinterConnection | null {
 export function checkBuiltInPrinter(): Promise<CheckBuiltInPrinterSuccess> {
   return new Promise<CheckBuiltInPrinterSuccess>((resolve, reject) => {
     checkBuiltInPrinterInternal({ success: (res: CheckBuiltInPrinterSuccess) => { resolve(res) }, fail: (err: PrinterError) => { reject(err) } })
+  })
+}
+
+export function testPrint(options: ConnectPrinterSimpleOptions): Promise<WriteDataResult> {
+  return new Promise<WriteDataResult>((resolve, reject) => {
+    connectPrinterInternal({
+      deviceId: options.deviceId,
+      serviceUUIDs: options.serviceUUIDs,
+      writeCharacteristicUUIDs: options.writeCharacteristicUUIDs,
+      timeout: options.timeout,
+      success: (_connection: PrinterConnection) => {
+        const bytes = [...buildTestPrintEsc().bytes]
+        const chunkSize = getDefaultChunkSize(bytes)
+        const chunks = splitBytes(bytes, chunkSize)
+        printEscInternal({
+          bytes,
+          chunkSize,
+          success: () => {
+            disconnectPrinterInternal({
+              success: () => resolve({ byteLength: bytes.length, chunkCount: chunks.length, complete: true, msg: 'ok' }),
+              fail: (_err: PrinterError) => resolve({ byteLength: bytes.length, chunkCount: chunks.length, complete: true, msg: 'ok' }),
+            })
+          },
+          fail: (err: PrinterError) => {
+            disconnectPrinterInternal({
+              success: () => reject(err),
+              fail: (_disconnectErr: PrinterError) => reject(err),
+            })
+          },
+        })
+      },
+      fail: (err: PrinterError) => { reject(err) },
+    })
   })
 }
 

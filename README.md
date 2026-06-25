@@ -147,6 +147,31 @@ if (available && device) {
 }
 ```
 
+### 会话连接
+
+当前示例页不再本地保存打印机资料。进入打印机管理页后直接搜索蓝牙/内置打印机，或输入 Wi-Fi 打印机 IP 与端口连接；页面只维护当前会话的搜索结果和连接状态。
+
+```ts
+import { usePrinter } from '@/composables/usePrinter'
+import { printText } from '@/uni_modules/yuntu-printer-uts'
+
+const {
+  connectDevice,
+  devices,
+  searchAvailablePrinters,
+} = usePrinter()
+
+await searchAvailablePrinters()
+await connectDevice(devices.value[0])
+
+await printText({
+  title: '收银小票',
+  lines: ['订单号 A001', '实收 38.00'],
+  feed: 3,
+  cut: true,
+})
+```
+
 ## 真机验证流程
 
 ### BLE 验证
