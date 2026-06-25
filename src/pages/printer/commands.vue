@@ -14,8 +14,8 @@ import {
   printEsc,
   printText,
 } from '@/uni_modules/yuntu-printer-uts'
-import { getPrinterErrorMessage } from '@/utils/printerErrors'
 import { isBuiltInPrinterCommand, printerCommandTests } from '@/utils/printerCommandTests'
+import { getPrinterErrorMessage } from '@/utils/printerErrors'
 
 definePage({
   name: 'printerCommands',
@@ -36,6 +36,28 @@ const statusText = computed(() => {
     return '未连接打印机'
   }
   return `${connectionType.value || 'printer'} · ${connectedDeviceId.value}`
+})
+const availableCommands = computed(() => {
+  if (connectionType.value === 'noryox') {
+    return printerCommandTests.filter(isBuiltInPrinterCommand)
+  }
+  return printerCommandTests.filter(command => !isBuiltInPrinterCommand(command))
+})
+const commandGroups = computed(() => {
+  const groups: { commands: typeof printerCommandTests, title: string }[] = []
+  for (const command of availableCommands.value) {
+    const group = groups.find(item => item.title === command.category)
+    if (group) {
+      group.commands.push(command)
+    }
+    else {
+      groups.push({
+        title: command.category,
+        commands: [command],
+      })
+    }
+  }
+  return groups
 })
 
 function showError(message: string) {
@@ -113,11 +135,7 @@ async function runAllCommands() {
     return
   }
 
-  const commands = connectionType.value === 'noryox'
-    ? printerCommandTests.filter(isBuiltInPrinterCommand)
-    : printerCommandTests.filter(command => !isBuiltInPrinterCommand(command))
-
-  for (const command of commands) {
+  for (const command of availableCommands.value) {
     const ok = await runCommand(command.id, { batch: true })
     if (!ok) {
       return
@@ -156,24 +174,34 @@ onMounted(() => {
       </demo-block>
 
       <demo-block title="打印命令" transparent>
-        <wd-cell-group border custom-class="rounded-2! overflow-hidden">
-          <wd-cell
-            v-for="command in printerCommandTests"
-            :key="command.id"
-            :title="command.title"
-            :label="command.description"
-          >
-            <wd-button
-              size="small"
-              type="success"
-              :disabled="!isConnected || loading"
-              :loading="runningId === command.id"
-              @click="runCommand(command.id)"
+        <view v-if="commandGroups.length === 0" class="px-4">
+          <wd-cell-group border custom-class="rounded-2! overflow-hidden">
+            <wd-cell title="暂无可用命令" value="请先连接打印机" />
+          </wd-cell-group>
+        </view>
+        <view v-for="group in commandGroups" :key="group.title" class="mb-3 px-4">
+          <view class="mb-2 text-3.5 text-[#666] font-600">
+            {{ group.title }}
+          </view>
+          <wd-cell-group border custom-class="rounded-2! overflow-hidden">
+            <wd-cell
+              v-for="command in group.commands"
+              :key="command.id"
+              :title="command.title"
+              :label="command.description"
             >
-              测试
-            </wd-button>
-          </wd-cell>
-        </wd-cell-group>
+              <wd-button
+                size="small"
+                type="success"
+                :disabled="!isConnected || loading"
+                :loading="runningId === command.id"
+                @click="runCommand(command.id)"
+              >
+                测试
+              </wd-button>
+            </wd-cell>
+          </wd-cell-group>
+        </view>
       </demo-block>
 
       <wd-gap :height="24" />
