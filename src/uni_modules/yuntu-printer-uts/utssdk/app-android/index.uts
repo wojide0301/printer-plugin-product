@@ -1448,15 +1448,13 @@ export function printBuiltInTwoColumn(options: PrintBuiltInTwoColumnOptions): Pr
       try {
         const esc = createEscBuilder()
         esc.escTwoColumn(options.leftText, options.rightText, (options.paperWidthDots ?? 384).toInt(), (options.charWidthDots ?? 12).toInt())
+        if (options.autoOut == true) {
+          esc.addPrintAndFeedLines(3)
+          esc.escCutPaper()
+        }
         const response = printNoryoxEscposData(service, bytesToNative(esc.bytes))
         if (response != null && response.size > 0) {
           emitDataReceive(bytesFromNative(response))
-        }
-        if (options.autoOut == true) {
-          const endResult = printNoryoxEndAutoOut(service)
-          const result = createBuiltInResult(endResult)
-          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
-          return
         }
         resolve(createBuiltInResult(0))
       } catch (error) {
@@ -1484,15 +1482,13 @@ export function printBuiltInThreeColumn(options: PrintBuiltInThreeColumnOptions)
           (options.middlePositionDots ?? 200).toInt(),
           (options.paperWidthDots ?? 384).toInt(),
           (options.charWidthDots ?? 12).toInt())
+        if (options.autoOut == true) {
+          esc.addPrintAndFeedLines(3)
+          esc.escCutPaper()
+        }
         const response = printNoryoxEscposData(service, bytesToNative(esc.bytes))
         if (response != null && response.size > 0) {
           emitDataReceive(bytesFromNative(response))
-        }
-        if (options.autoOut == true) {
-          const endResult = printNoryoxEndAutoOut(service)
-          const result = createBuiltInResult(endResult)
-          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
-          return
         }
         resolve(createBuiltInResult(0))
       } catch (error) {
@@ -1521,15 +1517,13 @@ export function printBuiltInFourColumn(options: PrintBuiltInFourColumnOptions): 
           (options.threePositionDots ?? 260).toInt(),
           (options.paperWidthDots ?? 384).toInt(),
           (options.charWidthDots ?? 12).toInt())
+        if (options.autoOut == true) {
+          esc.addPrintAndFeedLines(3)
+          esc.escCutPaper()
+        }
         const response = printNoryoxEscposData(service, bytesToNative(esc.bytes))
         if (response != null && response.size > 0) {
           emitDataReceive(bytesFromNative(response))
-        }
-        if (options.autoOut == true) {
-          const endResult = printNoryoxEndAutoOut(service)
-          const result = createBuiltInResult(endResult)
-          if (result.ok) { resolve(result) } else { reject(createBuiltInWriteError(result)) }
-          return
         }
         resolve(createBuiltInResult(0))
       } catch (error) {
