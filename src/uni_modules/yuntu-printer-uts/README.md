@@ -208,14 +208,14 @@ await printBuiltInTwoColumn({
   autoOut: true,
 })
 
-// 三列 — middlePositionDots / rightPositionDots 指定各列起始位置（默认 200 / 384）
+// 三列 — rightText 自动靠右对齐纸边，middlePositionDots 指定中列起始（默认 200）
 await printBuiltInThreeColumn({
   leftText: 'Coffee',
   middleText: 'x2',
   rightText: '24.00',
 })
 
-// 四列 — twoPositionDots / threePositionDots / fourPositionDots 指定列位置（默认 140 / 260 / 384）
+// 四列 — fourText 自动靠右对齐纸边，twoPositionDots / threePositionDots 指定中间列（默认 140 / 260）
 await printBuiltInFourColumn({
   oneText: 'Coffee',
   twoText: '2',
@@ -231,8 +231,8 @@ await printBuiltInFourColumn({
 ```ts
 const esc = createEscBuilder()
 esc.escTwoColumn('Total:', '9998.00')
-esc.escThreeColumn('Item', 'Qty', 'Price', 200, 384)
-esc.escFourColumn('A', '2', '10', '20.00', 140, 260, 384)
+esc.escThreeColumn('Item', 'Qty', 'Price')
+esc.escFourColumn('A', '2', '10', '20.00')
 esc.addPrintAndFeedLines(3)
 esc.escCutPaper()
 await sendEsc(esc)

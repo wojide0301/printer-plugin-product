@@ -153,7 +153,8 @@ declare module '@/uni_modules/yuntu-printer-uts' {
     middleText: string
     rightText: string
     middlePositionDots?: number
-    rightPositionDots?: number
+    paperWidthDots?: number
+    charWidthDots?: number
     autoOut?: boolean
   }
 
@@ -164,7 +165,8 @@ declare module '@/uni_modules/yuntu-printer-uts' {
     fourText: string
     twoPositionDots?: number
     threePositionDots?: number
-    fourPositionDots?: number
+    paperWidthDots?: number
+    charWidthDots?: number
     autoOut?: boolean
   }
 
@@ -215,8 +217,8 @@ declare module '@/uni_modules/yuntu-printer-uts' {
     escText(text: string): void
     escQRCode(payload: EscQRCodeParam): void
     escTwoColumn(leftText: string, rightText: string, paperWidthDots?: number, charWidthDots?: number): void
-    escThreeColumn(leftText: string, middleText: string, rightText: string, middlePositionDots?: number, rightPositionDots?: number): void
-    escFourColumn(oneText: string, twoText: string, threeText: string, fourText: string, twoPositionDots?: number, threePositionDots?: number, fourPositionDots?: number): void
+    escThreeColumn(leftText: string, middleText: string, rightText: string, middlePositionDots?: number, paperWidthDots?: number, charWidthDots?: number): void
+    escFourColumn(oneText: string, twoText: string, threeText: string, fourText: string, twoPositionDots?: number, threePositionDots?: number, paperWidthDots?: number, charWidthDots?: number): void
     escStringCommand(command: string): void
     escBytesCommand(command: number[]): void
   }

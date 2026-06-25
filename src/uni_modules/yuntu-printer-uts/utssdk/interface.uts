@@ -82,8 +82,8 @@ export type PrintBuiltInImageOptions = { base64Str: string, type?: BuiltInImageT
 export type PrintBuiltInTableTextOptions = UTSJSONObject
 export type PrintBuiltInLabelOptions = UTSJSONObject
 export type PrintBuiltInTwoColumnOptions = { leftText: string, rightText: string, paperWidthDots?: Int, charWidthDots?: Int, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
-export type PrintBuiltInThreeColumnOptions = { leftText: string, middleText: string, rightText: string, middlePositionDots?: Int, rightPositionDots?: Int, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
-export type PrintBuiltInFourColumnOptions = { oneText: string, twoText: string, threeText: string, fourText: string, twoPositionDots?: Int, threePositionDots?: Int, fourPositionDots?: Int, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintBuiltInThreeColumnOptions = { leftText: string, middleText: string, rightText: string, middlePositionDots?: Int, paperWidthDots?: Int, charWidthDots?: Int, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
+export type PrintBuiltInFourColumnOptions = { oneText: string, twoText: string, threeText: string, fourText: string, twoPositionDots?: Int, threePositionDots?: Int, paperWidthDots?: Int, charWidthDots?: Int, autoOut?: boolean, success?: (result: BuiltInPrinterResult) => void, fail?: (err: PrinterError) => void, complete?: () => void }
 
 // ---- public API signatures ----
 

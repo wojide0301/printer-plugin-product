@@ -1481,7 +1481,9 @@ export function printBuiltInThreeColumn(options: PrintBuiltInThreeColumnOptions)
       try {
         const esc = createEscBuilder()
         esc.escThreeColumn(options.leftText, options.middleText, options.rightText,
-          (options.middlePositionDots ?? 200).toInt(), (options.rightPositionDots ?? 384).toInt())
+          (options.middlePositionDots ?? 200).toInt(),
+          (options.paperWidthDots ?? 384).toInt(),
+          (options.charWidthDots ?? 12).toInt())
         const response = printNoryoxEscposData(service, bytesToNative(esc.bytes))
         if (response != null && response.size > 0) {
           emitDataReceive(bytesFromNative(response))
@@ -1515,7 +1517,10 @@ export function printBuiltInFourColumn(options: PrintBuiltInFourColumnOptions): 
       try {
         const esc = createEscBuilder()
         esc.escFourColumn(options.oneText, options.twoText, options.threeText, options.fourText,
-          (options.twoPositionDots ?? 140).toInt(), (options.threePositionDots ?? 260).toInt(), (options.fourPositionDots ?? 384).toInt())
+          (options.twoPositionDots ?? 140).toInt(),
+          (options.threePositionDots ?? 260).toInt(),
+          (options.paperWidthDots ?? 384).toInt(),
+          (options.charWidthDots ?? 12).toInt())
         const response = printNoryoxEscposData(service, bytesToNative(esc.bytes))
         if (response != null && response.size > 0) {
           emitDataReceive(bytesFromNative(response))

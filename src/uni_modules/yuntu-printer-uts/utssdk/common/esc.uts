@@ -151,17 +151,21 @@ export class PrinterEscBuilder {
   /**
    * ESC $ three-column layout.
    * Layout: left → ESC $ middlePos → middle → ESC $ rightPos → right → \\n
+   * The right column position is auto-calculated so the text ends at the paper edge,
+   * matching `escTwoColumn` behaviour.
    * @param leftText    Left-aligned text
    * @param middleText  Middle column text
    * @param rightText   Right column text
    * @param middlePositionDots  ESC $ position for middle column, default 200
-   * @param rightPositionDots   ESC $ position for right column, default 384
+   * @param paperWidthDots      Paper width in dots, default 384 (58mm)
+   * @param charWidthDots       Character width in dots, default 12
    */
-  escThreeColumn(leftText: string, middleText: string, rightText: string, middlePositionDots: number = 200, rightPositionDots: number = 384) {
+  escThreeColumn(leftText: string, middleText: string, rightText: string, middlePositionDots: number = 200, paperWidthDots: number = 384, charWidthDots: number = 12) {
+    const rightPos = paperWidthDots - rightText.length * charWidthDots
     this.bytes.push(...encodeAscii(leftText))
     this.writeEscAbsolutePosition(middlePositionDots)
     this.bytes.push(...encodeAscii(middleText))
-    this.writeEscAbsolutePosition(rightPositionDots)
+    this.writeEscAbsolutePosition(rightPos)
     this.bytes.push(...encodeAscii(rightText))
     this.bytes.push(0x0A)
   }
@@ -169,21 +173,25 @@ export class PrinterEscBuilder {
   /**
    * ESC $ four-column layout.
    * Layout: col1 → ESC $ pos2 → col2 → ESC $ pos3 → col3 → ESC $ pos4 → col4 → \\n
+   * The fourth column position is auto-calculated so the text ends at the paper edge,
+   * matching `escTwoColumn` behaviour.
    * @param oneText   Column 1 text
    * @param twoText   Column 2 text
    * @param threeText Column 3 text
    * @param fourText  Column 4 text
    * @param twoPositionDots    ESC $ position for column 2, default 140
    * @param threePositionDots  ESC $ position for column 3, default 260
-   * @param fourPositionDots   ESC $ position for column 4, default 384
+   * @param paperWidthDots     Paper width in dots, default 384 (58mm)
+   * @param charWidthDots      Character width in dots, default 12
    */
-  escFourColumn(oneText: string, twoText: string, threeText: string, fourText: string, twoPositionDots: number = 140, threePositionDots: number = 260, fourPositionDots: number = 384) {
+  escFourColumn(oneText: string, twoText: string, threeText: string, fourText: string, twoPositionDots: number = 140, threePositionDots: number = 260, paperWidthDots: number = 384, charWidthDots: number = 12) {
+    const fourPos = paperWidthDots - fourText.length * charWidthDots
     this.bytes.push(...encodeAscii(oneText))
     this.writeEscAbsolutePosition(twoPositionDots)
     this.bytes.push(...encodeAscii(twoText))
     this.writeEscAbsolutePosition(threePositionDots)
     this.bytes.push(...encodeAscii(threeText))
-    this.writeEscAbsolutePosition(fourPositionDots)
+    this.writeEscAbsolutePosition(fourPos)
     this.bytes.push(...encodeAscii(fourText))
     this.bytes.push(0x0A)
   }
